@@ -108,10 +108,9 @@ export default function EarlyAccessModal({ isOpen, onClose, source = "unknown" }
             /* Success state */
             <div className="text-center py-4">
               <div className="text-4xl mb-3">🎉</div>
-              <h3 className="text-lg font-bold text-gray-900">You&apos;re on the list!</h3>
+              <h3 className="text-lg font-bold text-gray-900">You&apos;re on the list! 🚀</h3>
               <p className="text-sm text-gray-500 mt-2">
-                We&apos;ll email you as soon as ProductSprint Pro launches.
-                You&apos;ll get early-bird pricing as a thank-you.
+                We&apos;ll notify you when Pro launches — and you&apos;ll get early-bird pricing as a thank-you.
               </p>
               <button
                 onClick={onClose}

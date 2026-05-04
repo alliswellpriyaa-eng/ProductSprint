@@ -233,7 +233,7 @@ export default function Home() {
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-orange-500 flex items-center justify-center text-white font-bold text-sm shadow">PS</div>
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-none">ProductSprint</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Find → Build → Launch → Earn</p>
+              <p className="text-xs text-gray-400 mt-0.5">Turn ideas into Etsy products in 30 days</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -437,8 +437,14 @@ export default function Home() {
         )}
       </main>
 
-      <footer className="text-center py-8 text-xs text-gray-400 border-t border-gray-100 mt-8">
-        ProductSprint · Built for digital sellers · Powered by AI
+      <footer className="text-center py-8 text-xs text-gray-400 border-t border-gray-100 mt-8 space-y-1">
+        <p>ProductSprint · Built for digital sellers · Powered by AI</p>
+        <p>
+          Questions?{" "}
+          <a href="mailto:support@productsprint.app" className="text-purple-500 hover:underline">
+            support@productsprint.app
+          </a>
+        </p>
       </footer>
 
       {/* Pre-monetization: EarlyAccessModal (email capture) */}
