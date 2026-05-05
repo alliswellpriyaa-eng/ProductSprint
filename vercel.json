@@ -2,5 +2,10 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "functions": {
+    "app/api/generate-planner/route.ts": { "maxDuration": 60 },
+    "app/api/create-product/route.ts":   { "maxDuration": 60 },
+    "app/api/analyze-idea/route.ts":     { "maxDuration": 60 }
+  }
 }

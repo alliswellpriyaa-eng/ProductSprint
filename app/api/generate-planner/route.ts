@@ -5,6 +5,9 @@ import { FALLBACK_PLANNER_DAYS } from "@/data/fallbacks";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
 
+// Tell Vercel to allow up to 60 s for this function (Hobby plan max)
+export const maxDuration = 60;
+
 const isDev = process.env.NODE_ENV === "development";
 
 // Planner payloads are large — cache for 2 hours
@@ -39,30 +42,15 @@ export async function POST(req: NextRequest) {
         generationConfig: { responseMimeType: "application/json" },
       });
 
-      // ── Optimised prompt ────────────────────────────────────────────────────
-      const prompt = `Generate a 30-day Etsy digital product creation plan for the "${niche}" niche.
-Phases: Days 1-5 = "Setup", Days 6-20 = "Build", Days 21-30 = "Launch".
-Each day: unique beginner-friendly product, 4 short tasks, 3 keywords, pricing, effort level.
-
-Return ONLY valid JSON (all 30 days):
-{
-  "days": [{
-    "day": 1,
-    "phase": "Setup",
-    "title": "Short product name",
-    "goal": "One sentence goal",
-    "tasks": ["Task 1","Task 2","Task 3","Task 4"],
-    "design": { "size": "US Letter (8.5×11 in)", "orientation": "Portrait", "style": "Minimal & Clean", "tool": "Canva" },
-    "keywords": ["keyword 1","keyword 2","keyword 3"],
-    "pricing": "$4.99–$7.99",
-    "time": "2–3 hours",
-    "effort": "Easy"
-  }]
-}
-Effort: "Easy" | "Medium" | "Hard". Vary product types. Include all 30 days.`;
+      // ── Prompt — lean schema so Gemini responds in < 20 s ──────────────────
+      const prompt = `Create a 30-day Etsy digital product plan for the "${niche}" niche.
+Phases: days 1-5 = "Setup", 6-20 = "Build", 21-30 = "Launch".
+Return ONLY this JSON with ALL 30 days — no extra text:
+{"days":[{"day":1,"phase":"Setup","title":"Product name","goal":"One sentence","tasks":["Task A","Task B","Task C"],"keywords":["kw1","kw2","kw3"],"pricing":"$4.99–$7.99","time":"2–3 hrs","effort":"Easy"}]}
+Rules: effort = Easy|Medium|Hard, vary product types, keep titles short, include all 30 days.`;
 
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Request timed out after 50s")), 50_000)
+        setTimeout(() => reject(new Error("Request timed out after 55s")), 55_000)
       );
       const result = await Promise.race([model.generateContent(prompt), timeoutPromise]);
       const cleaned = result.response.text().replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
