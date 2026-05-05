@@ -17,6 +17,7 @@ const PROD_REASON: Record<string, string> = {
   RATE_LIMIT: "The AI service is temporarily busy.",
   SAFETY_BLOCK: "The AI declined this request.",
   NETWORK: "A network error occurred.",
+  PARSE_ERROR: "The AI returned an unexpected format.",
   UNKNOWN: "The AI service is temporarily unavailable.",
 };
 

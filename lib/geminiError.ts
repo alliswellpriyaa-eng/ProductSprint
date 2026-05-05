@@ -60,6 +60,21 @@ export function parseGeminiError(error: unknown): GeminiError {
     };
   }
 
+  // SyntaxError from JSON.parse — Gemini returned non-JSON text
+  if (
+    error instanceof SyntaxError ||
+    raw.includes("SyntaxError") ||
+    raw.includes("JSON") ||
+    raw.includes("Unexpected token") ||
+    raw.includes("Unexpected end") ||
+    raw.includes("is not valid JSON")
+  ) {
+    return {
+      code: "PARSE_ERROR",
+      message: "The AI returned an unexpected format. Retrying usually fixes this.",
+    };
+  }
+
   // Return a trimmed, readable version of any other error
   return {
     code: "UNKNOWN",

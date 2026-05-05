@@ -53,8 +53,35 @@ Rules: effort = Easy|Medium|Hard, vary product types, keep titles short, include
         setTimeout(() => reject(new Error("Request timed out after 55s")), 55_000)
       );
       const result = await Promise.race([model.generateContent(prompt), timeoutPromise]);
-      const cleaned = result.response.text().replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const parsed = JSON.parse(cleaned);
+      const rawText = result.response.text();
+
+      if (!rawText || rawText.trim().length < 10) {
+        throw new SyntaxError("Gemini returned empty response");
+      }
+
+      // Strip markdown fences, then extract the JSON object/array
+      // by finding the first { or [ and the last matching } or ]
+      const stripped = rawText
+        .replace(/```json\s*/gi, "")
+        .replace(/```\s*/g, "")
+        .trim();
+
+      const firstBrace = stripped.indexOf("{");
+      const firstBracket = stripped.indexOf("[");
+      const startIdx =
+        firstBrace === -1 ? firstBracket :
+        firstBracket === -1 ? firstBrace :
+        Math.min(firstBrace, firstBracket);
+
+      if (startIdx === -1) throw new SyntaxError("No JSON object found in response");
+
+      const openChar = stripped[startIdx];
+      const closeChar = openChar === "{" ? "}" : "]";
+      const endIdx = stripped.lastIndexOf(closeChar);
+      if (endIdx === -1) throw new SyntaxError("Unterminated JSON in response");
+
+      const jsonStr = stripped.slice(startIdx, endIdx + 1);
+      const parsed = JSON.parse(jsonStr);
       const days = Array.isArray(parsed) ? parsed : (parsed.days ?? []);
       const payload = { days };
 
