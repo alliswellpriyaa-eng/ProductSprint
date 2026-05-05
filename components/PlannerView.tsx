@@ -15,13 +15,20 @@ interface DayDesign {
   tool: string;
 }
 
+const DEFAULT_DESIGN: DayDesign = {
+  size: "US Letter (8.5×11 in)",
+  orientation: "Portrait",
+  style: "Minimal & Clean",
+  tool: "Canva",
+};
+
 export interface PlanDay {
   day: number;
   phase: "Setup" | "Build" | "Launch";
   title: string;
   goal: string;
   tasks: string[];
-  design: DayDesign;
+  design?: DayDesign;
   keywords: string[];
   pricing: string;
   time: string;
@@ -93,9 +100,10 @@ function DayCard({ item, actionMode, isPremium, onUnlock }: {
   const phase = PHASES[item.phase] ?? PHASES.Build;
   const isOpen = expanded || actionMode;
 
+  const design = item.design ?? DEFAULT_DESIGN;
   const actionSteps = [
-    `Open Canva → Create new design (${item.design.size}, ${item.design.orientation})`,
-    `Design your "${item.title}" using ${item.design.style} style`,
+    `Open Canva → Create new design (${design.size}, ${design.orientation})`,
+    `Design your "${item.title}" using ${design.style} style`,
     ...item.tasks.map((t) => t),
     `Export as PDF Print (high resolution)`,
     `Create Etsy listing — use keyword: "${item.keywords[0] || "digital printable"}"`,
@@ -171,8 +179,8 @@ function DayCard({ item, actionMode, isPremium, onUnlock }: {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">🎨 Canva</p>
-                  <p className="text-xs text-gray-600">{item.design.size}</p>
-                  <p className="text-xs text-gray-500">{item.design.style}</p>
+                  <p className="text-xs text-gray-600">{design.size}</p>
+                  <p className="text-xs text-gray-500">{design.style}</p>
                 </div>
                 <div>
                   {isPremium ? (
