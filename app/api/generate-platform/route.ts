@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parseGeminiError } from "@/lib/geminiError";
+
+export const maxDuration = 60;
 import { FALLBACK_GUMROAD, FALLBACK_SHOPIFY } from "@/data/fallbacks";
 
 const isDev = process.env.NODE_ENV === "development";

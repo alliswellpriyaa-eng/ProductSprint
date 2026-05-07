@@ -3,6 +3,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parseGeminiError } from "@/lib/geminiError";
 import { FALLBACK_IDEAS } from "@/data/fallbacks";
 import { getFallbackIdeas } from "@/data/fallbackData";
+
+export const maxDuration = 60;
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
 import { withGeminiRetry } from "@/lib/geminiRetry";
@@ -68,13 +70,14 @@ Return ONLY this JSON (no markdown, no extra text):
       return NextResponse.json(parsed);
 
     } catch (error: unknown) {
-      const { message, code } = parseGeminiError(error);
-      if (isDev) console.error(`[generate-ideas][${code}]`, message);
+      const { message, code, raw } = parseGeminiError(error);
+      // Always log server-side (visible in Vercel function logs)
+      console.error(`[generate-ideas][${code}]`, raw ?? message);
 
       return NextResponse.json({
         fallback: true,
         errorCode: code,
-        devMessage: isDev ? message : undefined,
+        devMessage: isDev ? (raw ?? message) : undefined,
         ideas: getFallbackIdeas(niche),
       });
     }

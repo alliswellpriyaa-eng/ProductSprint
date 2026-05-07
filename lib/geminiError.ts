@@ -9,6 +9,8 @@ export type ErrorCode =
 export interface GeminiError {
   code: ErrorCode;
   message: string;
+  /** Raw error string — always populated, safe to log server-side */
+  raw?: string;
 }
 
 export function parseGeminiError(error: unknown): GeminiError {
@@ -60,11 +62,17 @@ export function parseGeminiError(error: unknown): GeminiError {
     raw.includes("ENOTFOUND") ||
     raw.includes("timed out") ||
     raw.includes("timeout") ||
-    raw.includes("AbortError")
+    raw.includes("AbortError") ||
+    raw.includes("socket hang up") ||
+    raw.includes("ETIMEDOUT") ||
+    raw.includes("Task timed out") ||
+    raw.includes("execution timeout") ||
+    raw.includes("Function execution took longer")
   ) {
     return {
       code: "NETWORK",
       message: "The request timed out — Gemini took too long to respond. Showing sample data instead.",
+      raw,
     };
   }
 
@@ -84,8 +92,10 @@ export function parseGeminiError(error: unknown): GeminiError {
   }
 
   // Return a trimmed, readable version of any other error
+  // Always include `raw` so server logs (devMessage) can surface the actual error
   return {
     code: "UNKNOWN",
     message: raw.length > 120 ? "Something went wrong. Please try again." : raw,
+    raw,
   };
 }

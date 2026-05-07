@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parseGeminiError } from "@/lib/geminiError";
+
+export const maxDuration = 60;
 import { FALLBACK_ANALYSIS } from "@/data/fallbacks";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
