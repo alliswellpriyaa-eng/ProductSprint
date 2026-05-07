@@ -74,10 +74,11 @@ Return ONLY this JSON (no markdown, no extra text):
       // Always log server-side (visible in Vercel function logs)
       console.error(`[generate-ideas][${code}]`, raw ?? message);
 
+      // TEMP: devMessage always included so we can diagnose prod errors via DevTools
       return NextResponse.json({
         fallback: true,
         errorCode: code,
-        devMessage: isDev ? (raw ?? message) : undefined,
+        devMessage: raw ?? message,
         ideas: getFallbackIdeas(niche),
       });
     }
