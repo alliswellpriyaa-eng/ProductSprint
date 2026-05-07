@@ -42,6 +42,29 @@ function Spinner({ size = 18 }: { size?: number }) {
   );
 }
 
+// ─── Animated loading hint ────────────────────────────────────────────────────
+
+const IDEA_LOADING_STEPS = [
+  "🔍 Scouting your niche…",
+  "💡 Generating product ideas…",
+  "📝 Writing titles & descriptions…",
+  "✅ Almost ready!",
+];
+
+function IdeaLoadingHint() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setStep((s) => (s + 1) % IDEA_LOADING_STEPS.length), 1800);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="flex items-center gap-3 bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 mb-5">
+      <Spinner size={16} />
+      <p className="text-sm text-purple-700 font-medium">{IDEA_LOADING_STEPS[step]}</p>
+    </div>
+  );
+}
+
 // ─── Skeleton Card ────────────────────────────────────────────────────────────
 
 function SkeletonCard() {
@@ -363,11 +386,14 @@ export default function Home() {
               />
             )}
 
-            {/* Skeleton */}
+            {/* Loading hint + Skeleton */}
             {loadingIdeas && (
-              <div data-testid="skeleton-loading" className="grid sm:grid-cols-2 gap-4 items-start">
-                {Array(6).fill(0).map((_, i) => <SkeletonCard key={i} />)}
-              </div>
+              <>
+                <IdeaLoadingHint />
+                <div data-testid="skeleton-loading" className="grid sm:grid-cols-2 gap-4 items-start">
+                  {Array(6).fill(0).map((_, i) => <SkeletonCard key={i} />)}
+                </div>
+              </>
             )}
 
             {/* Results */}

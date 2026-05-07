@@ -13,7 +13,7 @@ async function mockPlannerApi(page: import("@playwright/test").Page) {
 }
 
 async function unlockPremium(page: import("@playwright/test").Page) {
-  await page.evaluate(() => localStorage.setItem("etsy_premium", "true"));
+  await page.evaluate(() => localStorage.setItem("ps_dev_premium", "true"));
   await page.reload();
 }
 

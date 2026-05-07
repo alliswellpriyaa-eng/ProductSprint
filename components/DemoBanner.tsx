@@ -14,7 +14,7 @@ const isDev = process.env.NODE_ENV === "development";
 // User-friendly labels for each error type in production
 const PROD_REASON: Record<string, string> = {
   API_KEY_INVALID: "The AI service couldn't be reached.",
-  RATE_LIMIT: "The AI service is temporarily busy.",
+  RATE_LIMIT: "AI is busy right now. Showing sample data. Please retry in 1 minute.",
   SAFETY_BLOCK: "The AI declined this request.",
   NETWORK: "A network error occurred.",
   PARSE_ERROR: "The AI returned an unexpected format.",

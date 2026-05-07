@@ -5,6 +5,7 @@ import { FALLBACK_TAGS } from "@/data/fallbacks";
 import { getFallbackTags } from "@/data/fallbackData";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
+import { withGeminiRetry } from "@/lib/geminiRetry";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -46,7 +47,10 @@ Return ONLY this JSON (no markdown, no extra text):
   "tags": ["tag one","tag two","tag three","tag four","tag five","tag six","tag seven","tag eight","tag nine","tag ten","tag eleven","tag twelve","tag thirteen"]
 }`;
 
-      const result = await model.generateContent(prompt);
+      const result = await withGeminiRetry(
+        () => model.generateContent(prompt),
+        { label: "generate-tags", delayMs: 4000 }
+      );
       const cleaned = result.response.text().replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const parsed = JSON.parse(cleaned);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ErrorBanner from "@/components/ErrorBanner";
 import DemoBanner from "@/components/DemoBanner";
 import { trackEvent, isAtLimit, incrementTodayUsage, remainingToday } from "@/lib/analytics";
@@ -69,6 +69,36 @@ function Spinner({ size = 18 }: { size?: number }) {
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
     </svg>
+  );
+}
+
+// ─── Animated loading hint ────────────────────────────────────────────────────
+
+const LOADING_STEPS = [
+  "🤔 Thinking about your niche…",
+  "📅 Planning 30 days of products…",
+  "✍️ Writing tasks & keywords…",
+  "💵 Calculating pricing strategy…",
+  "🚀 Finalising your sprint plan…",
+];
+
+function PlannerLoadingHint() {
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setStep((s) => (s + 1) % LOADING_STEPS.length);
+    }, 2500);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="mt-4 flex items-center gap-3 bg-orange-50 border border-orange-100 rounded-xl px-4 py-3">
+      <Spinner size={16} />
+      <p className="text-sm text-orange-700 font-medium transition-all duration-300">
+        {LOADING_STEPS[step]}
+      </p>
+    </div>
   );
 }
 
@@ -285,6 +315,10 @@ export default function PlannerView({ niche: parentNiche, isPremium, onUpgradeCl
   }
 
   const handleGenerate = async () => {
+    // Always clear stale banners first — even if we return early
+    setError("");
+    setFallback(null);
+
     // Soft daily limit check (1 plan/day for free users)
     if (!isPremium && isAtLimit("planner")) {
       onUpgradeClick("planner_locked");
@@ -306,8 +340,6 @@ export default function PlannerView({ niche: parentNiche, isPremium, onUpgradeCl
     trackEvent("cache_miss", { feature: "planner", niche: selectedNiche });
     setLoading(true);
     setPlanDays([]);
-    setError("");
-    setFallback(null);
     setPlanFromCache(false);
     try {
       const res = await fetch("/api/generate-planner", {
@@ -375,7 +407,9 @@ export default function PlannerView({ niche: parentNiche, isPremium, onUpgradeCl
           </button>
         </div>
 
-        {!isPremium && (
+        {loading && <PlannerLoadingHint />}
+
+        {!loading && !isPremium && (
           <p className="text-xs text-gray-400 mt-3 flex items-center gap-1">
             ⚡ Free: 1 sprint plan/day. Daily tasks, keywords, and pricing unlock with{" "}
             <button onClick={() => onUpgradeClick("planner_locked")} className="text-purple-500 font-semibold hover:underline">Sprint Pro</button>.

@@ -80,7 +80,7 @@ export default function EarlyAccessModal({ isOpen, onClose, source = "unknown" }
 
   return (
     <div
-      data-testid="early-access-modal"
+      data-testid="upgrade-modal"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
@@ -161,6 +161,7 @@ export default function EarlyAccessModal({ isOpen, onClose, source = "unknown" }
               </form>
 
               <button
+                data-testid="upgrade-modal-close-btn"
                 onClick={onClose}
                 className="w-full mt-2 text-center text-xs text-gray-400 hover:text-gray-600 transition-colors py-1.5"
               >

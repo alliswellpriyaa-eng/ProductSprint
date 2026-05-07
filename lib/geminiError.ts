@@ -18,23 +18,31 @@ export function parseGeminiError(error: unknown): GeminiError {
     raw.includes("API_KEY_INVALID") ||
     raw.includes("API key not valid") ||
     raw.includes("400 Bad Request") ||
-    raw.includes("INVALID_ARGUMENT")
+    raw.includes("INVALID_ARGUMENT") ||
+    raw.includes("404") ||
+    raw.includes("Not Found") ||
+    raw.includes("no longer available") ||
+    raw.includes("deprecated")
   ) {
     return {
       code: "API_KEY_INVALID",
-      message: "Your Gemini API key is invalid or missing. Open .env.local and paste a valid key from aistudio.google.com.",
+      message: "Your Gemini API key is invalid or the model is unavailable. Check your key at aistudio.google.com.",
     };
   }
 
   if (
     raw.includes("429") ||
+    raw.includes("503") ||
     raw.includes("RESOURCE_EXHAUSTED") ||
     raw.includes("quota") ||
-    raw.includes("rate limit")
+    raw.includes("rate limit") ||
+    raw.includes("high demand") ||
+    raw.includes("Service Unavailable") ||
+    raw.includes("temporarily")
   ) {
     return {
       code: "RATE_LIMIT",
-      message: "Gemini rate limit reached. Wait 10–15 seconds and try again.",
+      message: "Gemini is busy right now. Wait 10–15 seconds and hit Retry.",
     };
   }
 

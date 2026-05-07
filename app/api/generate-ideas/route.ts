@@ -5,6 +5,7 @@ import { FALLBACK_IDEAS } from "@/data/fallbacks";
 import { getFallbackIdeas } from "@/data/fallbackData";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
+import { withGeminiRetry } from "@/lib/geminiRetry";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -54,7 +55,10 @@ Return ONLY this JSON (no markdown, no extra text):
   ]
 }`;
 
-      const result = await model.generateContent(prompt);
+      const result = await withGeminiRetry(
+        () => model.generateContent(prompt),
+        { label: "generate-ideas", delayMs: 4000 }
+      );
       const text = result.response.text();
       const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const parsed = JSON.parse(cleaned);

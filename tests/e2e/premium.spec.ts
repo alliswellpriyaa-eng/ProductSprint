@@ -1,6 +1,6 @@
 // Scenario 10: Premium locked features show upgrade CTA
 import { test, expect } from "@playwright/test";
-import { MOCK_IDEAS, MOCK_ANALYSIS } from "./fixtures/mockData";
+import { MOCK_IDEAS, MOCK_ANALYSIS, MOCK_SEO_TITLES, MOCK_TAGS } from "./fixtures/mockData";
 
 async function mockIdeasApis(page: import("@playwright/test").Page) {
   await page.route("/api/generate-ideas", (route) =>
@@ -8,6 +8,12 @@ async function mockIdeasApis(page: import("@playwright/test").Page) {
   );
   await page.route("/api/analyze-idea", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MOCK_ANALYSIS) })
+  );
+  await page.route("/api/generate-seo", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MOCK_SEO_TITLES) })
+  );
+  await page.route("/api/generate-tags", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MOCK_TAGS) })
   );
 }
 
@@ -18,7 +24,7 @@ async function generateIdeas(page: import("@playwright/test").Page) {
 }
 
 async function unlockPremium(page: import("@playwright/test").Page) {
-  await page.evaluate(() => localStorage.setItem("etsy_premium", "true"));
+  await page.evaluate(() => localStorage.setItem("ps_dev_premium", "true"));
   await page.reload();
 }
 
@@ -37,16 +43,16 @@ test.describe("Free user — locked features show upgrade CTA", () => {
     await expect(firstCard.getByTestId("lock-gate").first()).toContainText("Upgrade to unlock");
   });
 
-  test("SEO button triggers upgrade modal for free users", async ({ page }) => {
+  test("SEO button works for free users (shows results up to daily limit)", async ({ page }) => {
     const firstCard = page.getByTestId("idea-card").first();
     await firstCard.getByTestId("seo-button").click();
-    await expect(page.getByTestId("upgrade-modal")).toBeVisible();
+    await expect(firstCard.getByTestId("seo-results")).toBeVisible({ timeout: 8_000 });
   });
 
-  test("Tags button triggers upgrade modal for free users", async ({ page }) => {
+  test("Tags button works for free users (shows results up to daily limit)", async ({ page }) => {
     const firstCard = page.getByTestId("idea-card").first();
     await firstCard.getByTestId("tags-button").click();
-    await expect(page.getByTestId("upgrade-modal")).toBeVisible();
+    await expect(firstCard.getByTestId("tags-results")).toBeVisible({ timeout: 8_000 });
   });
 
   test("Save button triggers upgrade modal for free users", async ({ page }) => {
@@ -60,22 +66,15 @@ test.describe("Free user — locked features show upgrade CTA", () => {
     await expect(page.getByTestId("upgrade-modal")).toBeVisible();
   });
 
-  test("upgrade modal shows pricing ($10/month)", async ({ page }) => {
+  test("upgrade modal shows Pro feature list", async ({ page }) => {
     await page.getByTestId("upgrade-button").click();
     const modal = page.getByTestId("upgrade-modal");
     await expect(modal).toBeVisible();
-    await expect(modal).toContainText("$10");
-    await expect(modal).toContainText("month");
+    await expect(modal).toContainText("SEO");
+    await expect(modal).toContainText("30-Day Sprint");
   });
 
-  test("upgrade modal shows feature list", async ({ page }) => {
-    await page.getByTestId("upgrade-button").click();
-    const modal = page.getByTestId("upgrade-modal");
-    await expect(modal).toContainText("SEO-optimized titles");
-    await expect(modal).toContainText("30-day sprint plan");
-  });
-
-  test("upgrade modal closes when clicking 'Continue with free plan'", async ({ page }) => {
+  test("upgrade modal closes when clicking 'Keep exploring for free'", async ({ page }) => {
     await page.getByTestId("upgrade-button").click();
     await expect(page.getByTestId("upgrade-modal")).toBeVisible();
     await page.getByTestId("upgrade-modal-close-btn").click();
@@ -87,17 +86,17 @@ test.describe("Free user — locked features show upgrade CTA", () => {
     await expect(plannerTab).toContainText("🔒");
   });
 
-  test("Start 30-Day Sprint button shows lock icon for free users", async ({ page }) => {
+  test("Start 30-Day Sprint button is visible and enabled for free users", async ({ page }) => {
     await page.getByTestId("tab-planner").click();
     const generatePlanBtn = page.getByTestId("generate-plan-button");
-    await expect(generatePlanBtn).toContainText("🔒");
     await expect(generatePlanBtn).toContainText("Start 30-Day Sprint");
+    await expect(generatePlanBtn).toBeEnabled();
   });
 
-  test("Planner generate button opens upgrade modal for free users", async ({ page }) => {
+  test("Planner shows daily limit info for free users", async ({ page }) => {
     await page.getByTestId("tab-planner").click();
-    await page.getByTestId("generate-plan-button").click();
-    await expect(page.getByTestId("upgrade-modal")).toBeVisible();
+    // The limit info paragraph is shown below the generate button for free users
+    await expect(page.locator("text=1 sprint plan/day")).toBeVisible();
   });
 });
 
@@ -122,19 +121,16 @@ test.describe("Premium user — features are unlocked", () => {
     await expect(firstCard.getByTestId("lock-gate")).toHaveCount(0);
   });
 
-  test("unlocking premium via modal toggle works", async ({ page }) => {
-    // Start with no premium
-    await page.evaluate(() => localStorage.removeItem("etsy_premium"));
+  test("removing premium reverts header button to Go Pro", async ({ page }) => {
+    // Premium is active from beforeEach
+    await expect(page.getByTestId("upgrade-button")).toContainText("Sprint Pro");
+
+    // Remove premium and reload
+    await page.evaluate(() => localStorage.removeItem("ps_dev_premium"));
     await page.reload();
     await mockIdeasApis(page);
 
-    // Click upgrade and unlock
-    await page.getByTestId("upgrade-button").click();
-    await expect(page.getByTestId("upgrade-modal")).toBeVisible();
-    await page.getByTestId("upgrade-modal-unlock-btn").click();
-    await expect(page.getByTestId("upgrade-modal")).toBeHidden();
-
-    // Button should now show Sprint Pro
-    await expect(page.getByTestId("upgrade-button")).toContainText("Sprint Pro");
+    // Back to free tier
+    await expect(page.getByTestId("upgrade-button")).toContainText("Go Pro");
   });
 });

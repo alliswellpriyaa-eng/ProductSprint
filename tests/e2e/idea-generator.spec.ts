@@ -44,9 +44,10 @@ async function generateIdeas(page: import("@playwright/test").Page) {
 
 // Helper: unlock premium via localStorage
 async function unlockPremium(page: import("@playwright/test").Page) {
-  await page.evaluate(() => localStorage.setItem("etsy_premium", "true"));
+  await page.evaluate(() => localStorage.setItem("ps_dev_premium", "true"));
   await page.reload();
-  await expect(page.getByTestId("upgrade-button")).toContainText("Premium");
+  // After reload the button switches to "⚡ Sprint Pro" to indicate premium is active
+  await expect(page.getByTestId("upgrade-button")).toContainText("Sprint Pro");
 }
 
 test.describe("Idea Generator — generate ideas", () => {
@@ -109,7 +110,7 @@ test.describe("Idea Generator — generate ideas", () => {
     await page.getByTestId("niche-select").selectOption("Fitness");
     await page.getByTestId("product-type-select").selectOption("Tracker");
     await generateIdeas(page);
-    const heading = page.locator("h2").filter({ hasText: "10 ideas" });
+    const heading = page.locator("h2").filter({ hasText: "10 sprint ideas" });
     await expect(heading).toContainText("Fitness");
     await expect(heading).toContainText("Tracker");
   });

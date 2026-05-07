@@ -37,22 +37,48 @@ export async function POST(req: NextRequest) {
 
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: { responseMimeType: "application/json" },
-      });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-      // ── Prompt — lean schema so Gemini responds in < 20 s ──────────────────
+      // ── Prompt — lean schema so Gemini responds quickly ────────────────────
       const prompt = `Create a 30-day Etsy digital product plan for the "${niche}" niche.
 Phases: days 1-5 = "Setup", 6-20 = "Build", 21-30 = "Launch".
 Return ONLY this JSON with ALL 30 days — no extra text:
 {"days":[{"day":1,"phase":"Setup","title":"Product name","goal":"One sentence","tasks":["Task A","Task B","Task C"],"keywords":["kw1","kw2","kw3"],"pricing":"$4.99–$7.99","time":"2–3 hrs","effort":"Easy"}]}
 Rules: effort = Easy|Medium|Hard, vary product types, keep titles short, include all 30 days.`;
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Request timed out after 55s")), 55_000)
-      );
-      const result = await Promise.race([model.generateContent(prompt), timeoutPromise]);
+      const generateRequest = {
+        contents: [{ role: "user" as const, parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
+        } as Record<string, unknown>,
+      };
+
+      // ── Auto-retry on 503 (server overload) — wait 5s then try once more ──
+      const is503 = (e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        return msg.includes("503") || msg.includes("high demand") || msg.includes("Service Unavailable");
+      };
+
+      const runGenerate = () => Promise.race([
+        model.generateContent(generateRequest),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Request timed out after 55s")), 55_000)
+        ),
+      ]);
+
+      let result;
+      try {
+        result = await runGenerate();
+      } catch (firstErr: unknown) {
+        if (is503(firstErr)) {
+          if (isDev) console.log("[generate-planner] 503 on first attempt, retrying in 5s…");
+          await new Promise((r) => setTimeout(r, 5000));
+          result = await runGenerate(); // throws if still failing → caught by outer catch
+        } else {
+          throw firstErr;
+        }
+      }
       const rawText = result.response.text();
 
       if (!rawText || rawText.trim().length < 10) {
@@ -90,11 +116,12 @@ Rules: effort = Easy|Medium|Hard, vary product types, keep titles short, include
 
     } catch (error: unknown) {
       const { message, code } = parseGeminiError(error);
-      if (isDev) console.error(`[generate-planner][${code}]`, message);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      if (isDev) console.error(`[generate-planner][${code}]`, rawMessage);
       return NextResponse.json({
         fallback: true,
         errorCode: code,
-        devMessage: isDev ? message : undefined,
+        devMessage: isDev ? rawMessage : undefined,
         days: FALLBACK_PLANNER_DAYS,
       });
     }
