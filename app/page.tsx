@@ -45,10 +45,12 @@ function Spinner({ size = 18 }: { size?: number }) {
 // ─── Animated loading hint ────────────────────────────────────────────────────
 
 const IDEA_LOADING_STEPS = [
-  "🔍 Scouting your niche…",
-  "💡 Generating product ideas…",
-  "📝 Writing titles & descriptions…",
-  "✅ Almost ready!",
+  "🔍 Analyzing Etsy demand for your niche…",
+  "💡 Finding low-competition opportunities…",
+  "📊 Scoring market potential…",
+  "📝 Writing SEO-friendly product concepts…",
+  "🏷️ Adding pricing & trend data…",
+  "✅ Packaging your sprint ideas…",
 ];
 
 function IdeaLoadingHint() {
@@ -69,7 +71,8 @@ function IdeaLoadingHint() {
 
 function SkeletonCard() {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3 animate-pulse">
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3.5 animate-pulse overflow-hidden">
+      {/* Header */}
       <div className="flex gap-3">
         <div className="w-7 h-7 rounded-full bg-gray-200 flex-shrink-0" />
         <div className="flex-1 space-y-2">
@@ -77,18 +80,30 @@ function SkeletonCard() {
           <div className="h-3 bg-gray-100 rounded w-full" />
         </div>
       </div>
-      <div className="bg-gray-50 rounded-xl p-3 space-y-2">
-        <div className="h-3 w-24 bg-gray-200 rounded" />
-        <div className="flex gap-2">
-          <div className="h-6 w-24 bg-gray-200 rounded-full" />
-          <div className="h-6 w-24 bg-gray-200 rounded-full" />
+      {/* Market score block */}
+      <div className="bg-gray-50 rounded-xl p-3.5 space-y-2.5">
+        <div className="flex justify-between">
+          <div className="h-3 w-20 bg-gray-200 rounded" />
+          <div className="h-5 w-14 bg-gray-200 rounded-full" />
+        </div>
+        {/* Demand bar */}
+        <div className="h-1.5 bg-gray-200 rounded-full" />
+        {/* Pills */}
+        <div className="flex gap-2 flex-wrap">
+          <div className="h-6 w-28 bg-gray-200 rounded-full" />
+          <div className="h-6 w-20 bg-gray-200 rounded-full" />
+          <div className="h-6 w-16 bg-gray-200 rounded-full" />
           <div className="h-6 w-24 bg-gray-200 rounded-full" />
         </div>
       </div>
-      <div className="h-9 bg-gray-200 rounded-xl" />
-      <div className="grid grid-cols-3 gap-1.5">
+      {/* CTA */}
+      <div className="h-10 bg-gray-200 rounded-xl" />
+      {/* Action buttons */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="h-8 col-span-2 bg-gray-100 rounded-lg" />
         <div className="h-8 bg-gray-100 rounded-lg" />
         <div className="h-8 bg-gray-100 rounded-lg" />
+        <div className="h-8 col-span-2 bg-gray-100 rounded-lg" />
         <div className="h-8 bg-gray-100 rounded-lg" />
       </div>
     </div>
@@ -430,22 +445,45 @@ export default function Home() {
               </div>
             )}
 
-            {/* Empty state */}
+            {/* Empty state + Onboarding */}
             {!loadingIdeas && ideas.length === 0 && !ideasError && (
-              <div className="text-center py-20">
-                <div className="text-5xl mb-4">⚡</div>
-                <p className="text-gray-500 font-medium">Ready to launch your next digital product?</p>
-                <p className="text-gray-400 text-sm mt-1">Pick a niche and product type, then hit Sprint to get 10 income-ready ideas.</p>
-                {nicheData && (
-                  <div className="mt-6 inline-flex flex-col items-center gap-1 bg-white border border-gray-100 rounded-2xl px-6 py-4 shadow-sm">
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">{niche} — Top sprint opportunities</p>
-                    <div className="flex flex-wrap gap-2 justify-center mt-1">
-                      {nicheData.trendingProducts.map((p) => (
-                        <span key={p} className="text-xs bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full">{p}</span>
-                      ))}
-                    </div>
+              <div>
+                {/* How it works — compact onboarding strip */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-6">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">How ProductSprint Works</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { step: "1", icon: "💡", title: "Generate Ideas", desc: "AI finds 10 profitable products for your niche with market scores" },
+                      { step: "2", icon: "📊", title: "Validate Opportunity", desc: "See demand, competition & SEO opportunity for each idea" },
+                      { step: "3", icon: "📋", title: "Get Listing Copy", desc: "Generate your Etsy title, description & thumbnail text instantly" },
+                      { step: "4", icon: "🚀", title: "Follow the Sprint", desc: "30-day plan tells you exactly what to create and publish each day" },
+                    ].map(({ step, icon, title, desc }) => (
+                      <div key={step} className="flex flex-col items-center text-center gap-2 p-3 rounded-xl bg-gray-50">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-orange-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{step}</div>
+                        <span className="text-xl">{icon}</span>
+                        <p className="text-xs font-semibold text-gray-700">{title}</p>
+                        <p className="text-xs text-gray-400 leading-relaxed">{desc}</p>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+
+                {/* Niche tip + empty prompt */}
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-3">⚡</div>
+                  <p className="text-gray-500 font-medium">Ready to launch your next digital product?</p>
+                  <p className="text-gray-400 text-sm mt-1">Pick a niche and product type above, then hit <strong>Start Product Sprint</strong>.</p>
+                  {nicheData && (
+                    <div className="mt-6 inline-flex flex-col items-center gap-1 bg-white border border-gray-100 rounded-2xl px-6 py-4 shadow-sm">
+                      <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">{niche} — Top opportunities right now</p>
+                      <div className="flex flex-wrap gap-2 justify-center mt-1">
+                        {nicheData.trendingProducts.map((p) => (
+                          <span key={p} className="text-xs bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full">{p}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

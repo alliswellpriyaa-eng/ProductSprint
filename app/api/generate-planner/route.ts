@@ -39,12 +39,24 @@ export async function POST(req: NextRequest) {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-      // ── Prompt — lean schema so Gemini responds quickly ────────────────────
-      const prompt = `Create a 30-day Etsy digital product plan for the "${niche}" niche.
-Phases: days 1-5 = "Setup", 6-20 = "Build", 21-30 = "Launch".
-Return ONLY this JSON with ALL 30 days — no extra text:
-{"days":[{"day":1,"phase":"Setup","title":"Product name","goal":"One sentence","tasks":["Task A","Task B","Task C"],"keywords":["kw1","kw2","kw3"],"pricing":"$4.99–$7.99","time":"2–3 hrs","effort":"Easy"}]}
-Rules: effort = Easy|Medium|Hard, vary product types, keep titles short, include all 30 days.`;
+      // ── Upgraded prompt: actionable SprintDay schema ──────────────────────
+      const prompt = `You are an Etsy digital product launch coach. Create a detailed 30-day sprint plan for the "${niche}" niche.
+
+Each day should feel like a clear, actionable coaching instruction — not generic advice.
+Vary the products across the 30 days (different types: planners, trackers, worksheets, bundles).
+Make tasks specific and executable in 1–3 hours.
+
+Return ONLY this JSON with ALL 30 days — no extra text, no markdown:
+{"days":[{"day":1,"phase":"Setup","title":"Product name (specific)","goal":"One actionable sentence","tasks":["Specific task A","Specific task B","Specific task C"],"keywords":["etsy kw1","etsy kw2","etsy kw3"],"pricing":"$4.99–$7.99","time":"2 hrs","effort":"Easy","category":"Research","estimatedTime":"2 hrs","completed":false}]}
+
+Rules:
+- phase: "Setup" (days 1-5), "Build" (days 6-20), "Launch" (days 21-30)
+- effort: "Easy" | "Medium" | "Hard"
+- category: "Research" | "Design" | "SEO" | "Listing" | "Marketing" | "Launch"
+- estimatedTime: e.g. "1–2 hrs", "3 hrs", "30 mins"
+- completed: always false
+- Keep titles short and specific (e.g. "Kids Morning Routine Chart" not "Create product")
+- Include all 30 days`;
 
       const generateRequest = {
         contents: [{ role: "user" as const, parts: [{ text: prompt }] }],

@@ -137,7 +137,7 @@ test.describe("SEO button", () => {
     const seoResults = firstCard.getByTestId("seo-results");
     await expect(seoResults).toBeVisible({ timeout: 8_000 });
     // Three SEO title items rendered
-    await expect(seoResults.locator(".bg-purple-50")).toHaveCount(3);
+    await expect(seoResults.locator(".bg-blue-50")).toHaveCount(3);
   });
 
   test("clicking SEO button again hides the results (toggle)", async ({ page }) => {

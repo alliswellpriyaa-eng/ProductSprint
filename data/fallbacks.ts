@@ -5,16 +5,66 @@
 
 // ─── generate-ideas ───────────────────────────────────────────────────────────
 export const FALLBACK_IDEAS = [
-  { title: "Kids Daily Routine Chart Printable", description: "Visual morning and bedtime routine tracker for children ages 4–8, perfect for building habits." },
-  { title: "Teacher Weekly Lesson Planner", description: "Editable 5-day classroom planning template for K–12 teachers with notes and objective sections." },
-  { title: "Monthly Budget Tracker Sheet", description: "Simple income and expense tracker for households, with savings goal and category breakdown." },
-  { title: "Wedding Guest List & RSVP Manager", description: "Printable spreadsheet to track guests, RSVPs, meal preferences, and gift records." },
-  { title: "30-Day Fitness Challenge Tracker", description: "Daily workout and progress log for beginners starting a new fitness routine." },
-  { title: "Self-Care Weekly Habit Checklist", description: "Wellness and habit tracker with daily reflection prompts, designed for busy moms." },
-  { title: "Gratitude Journal Template Pages", description: "Daily gratitude pages with morning prompts, mood tracker, and evening reflection." },
-  { title: "Kids Chore Chart Reward System", description: "Weekly task and responsibility chart with star stickers system for ages 5–12." },
-  { title: "Small Business Income Log", description: "Monthly revenue and expense tracker for Etsy sellers and freelancers." },
-  { title: "Seasonal Activity Bucket List", description: "Fun printable activity checklist for families and friends across all four seasons." },
+  {
+    title: "Kids Morning Routine Chart for Ages 4–8",
+    description: "Visual step-by-step morning routine chart that helps little ones get ready independently — no more nagging.",
+    marketScore: { demand: 9, competition: "Medium", seoOpportunity: "High", trend: "Stable", beginnerFriendly: true, estimatedPriceRange: "$4–$9" },
+    whyThisCouldSell: "Parents of young children are constantly searching for tools to reduce morning chaos. Routine charts rank among the top-selling kids printables year-round on Etsy.",
+  },
+  {
+    title: "Teacher Weekly Lesson Planner Printable",
+    description: "Editable 5-day classroom planning template for K–12 teachers with objectives, notes, and schedule blocks.",
+    marketScore: { demand: 8, competition: "High", seoOpportunity: "Medium", trend: "Seasonal", beginnerFriendly: true, estimatedPriceRange: "$5–$12" },
+    whyThisCouldSell: "Teacher planners spike in August and January when schools start new terms. Niche down to a grade level or subject for less competition.",
+  },
+  {
+    title: "Monthly Zero-Based Budget Planner Sheet",
+    description: "Simple income and expense tracker for households trying to get control of their spending, with savings goal dashboard.",
+    marketScore: { demand: 8, competition: "High", seoOpportunity: "Medium", trend: "Rising", beginnerFriendly: true, estimatedPriceRange: "$4–$8" },
+    whyThisCouldSell: "Personal finance printables surge every January and after viral TikTok finance trends. Zero-based budgeting is a rising search term.",
+  },
+  {
+    title: "Wedding Day-Of Timeline & Guest RSVP Tracker",
+    description: "Printable wedding planning toolkit combining a day-of schedule and guest RSVP spreadsheet in one download.",
+    marketScore: { demand: 7, competition: "Medium", seoOpportunity: "High", trend: "Stable", beginnerFriendly: true, estimatedPriceRange: "$6–$15" },
+    whyThisCouldSell: "Brides search Etsy for wedding planning tools 12–18 months in advance. Bundled products command higher prices and better perceived value.",
+  },
+  {
+    title: "30-Day Beginner Fitness Challenge Tracker",
+    description: "Daily workout log and body measurement tracker for total beginners starting their first fitness routine.",
+    marketScore: { demand: 7, competition: "Medium", seoOpportunity: "Medium", trend: "Seasonal", beginnerFriendly: true, estimatedPriceRange: "$3–$7" },
+    whyThisCouldSell: "January and September see huge fitness resolution spikes. Beginner-focused trackers outperform advanced ones because the audience is larger.",
+  },
+  {
+    title: "Self-Care Weekly Reset Habit Checklist",
+    description: "Wellness and habit tracker with daily reflection prompts, mood check-ins, and self-care task lists for busy moms.",
+    marketScore: { demand: 8, competition: "Medium", seoOpportunity: "High", trend: "Rising", beginnerFriendly: true, estimatedPriceRange: "$4–$9" },
+    whyThisCouldSell: "Self-care and mental wellness printables are one of the fastest-growing Etsy categories. Moms are the #1 buyer demographic for this niche.",
+  },
+  {
+    title: "5-Minute Daily Gratitude Journal Pages",
+    description: "Simple daily gratitude pages with morning intention prompts, mood tracker, and evening reflection section.",
+    marketScore: { demand: 7, competition: "High", seoOpportunity: "Medium", trend: "Stable", beginnerFriendly: true, estimatedPriceRange: "$4–$8" },
+    whyThisCouldSell: "Gratitude journals have consistent year-round demand. Standing out with a unique layout or theme (anxiety, grief, teen girls) reduces competition.",
+  },
+  {
+    title: "Kids Weekly Chore Chart with Star Rewards",
+    description: "Fun printable chore responsibility chart with a star sticker reward system designed for children ages 5–12.",
+    marketScore: { demand: 8, competition: "Medium", seoOpportunity: "High", trend: "Stable", beginnerFriendly: true, estimatedPriceRange: "$3–$7" },
+    whyThisCouldSell: "Chore charts are a perennial Etsy bestseller in the kids niche. Parents love star-reward systems — it's an emotionally compelling product hook.",
+  },
+  {
+    title: "Etsy Seller Monthly Income & Expense Log",
+    description: "Simple printable income tracker built specifically for Etsy sellers and digital product side-hustlers.",
+    marketScore: { demand: 6, competition: "Low", seoOpportunity: "High", trend: "Rising", beginnerFriendly: true, estimatedPriceRange: "$5–$10" },
+    whyThisCouldSell: "Very low competition in this hyper-niche segment. Etsy sellers buying from Etsy is a real phenomenon — they trust products made by fellow sellers.",
+  },
+  {
+    title: "Summer Boredom Buster Activity Pack for Kids",
+    description: "40+ printable summer activities, games, and challenges for kids ages 6–10 to beat boredom during school break.",
+    marketScore: { demand: 9, competition: "Medium", seoOpportunity: "High", trend: "Seasonal", beginnerFriendly: true, estimatedPriceRange: "$5–$14" },
+    whyThisCouldSell: "Summer activity printables spike massively in May–June as parents prepare for school break. Bundle format justifies a higher price point.",
+  },
 ];
 
 // ─── generate-seo ─────────────────────────────────────────────────────────────
@@ -96,6 +146,9 @@ export const FALLBACK_PLANNER_DAYS = Array.from({ length: 30 }, (_, i) => {
     pricing: "$3.99–$6.99",
     time: "2–3 hours",
     effort: day <= 5 ? "Easy" : day <= 20 ? "Medium" : ("Easy" as "Easy" | "Medium" | "Hard"),
+    category: (day <= 5 ? "Research" : day <= 8 ? "Design" : day <= 15 ? "Design" : day <= 20 ? "Listing" : day <= 25 ? "Marketing" : "Launch") as "Research" | "Design" | "SEO" | "Listing" | "Marketing" | "Launch",
+    estimatedTime: day <= 5 ? "1–2 hrs" : day <= 20 ? "2–3 hrs" : "1 hr",
+    completed: false,
   };
 });
 
