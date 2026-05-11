@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parseGeminiError } from "@/lib/geminiError";
-
-export const maxDuration = 60;
-import { FALLBACK_TAGS } from "@/data/fallbacks";
+import { extractJson } from "@/lib/safeJson";
+import { geminiCall } from "@/lib/geminiCall";
 import { getFallbackTags } from "@/data/fallbackData";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
-import { withGeminiRetry } from "@/lib/geminiRetry";
 
+export const maxDuration = 60;
 const isDev = process.env.NODE_ENV === "development";
 
 export async function POST(req: NextRequest) {
@@ -16,64 +14,46 @@ export async function POST(req: NextRequest) {
     const { idea } = await req.json();
     if (!idea) return NextResponse.json({ error: "idea is required" }, { status: 400 });
 
-    // ── Server cache check ──────────────────────────────────────────────────
     const key = serverCacheKey("tags", idea);
     const cached = getServerCache<{ tags: string[] }>(key);
     if (cached) {
-      if (isDev) console.log(`[generate-tags] cache HIT: ${key}`);
+      if (isDev) console.log(`[generate-tags] cache HIT`);
       return NextResponse.json({ ...cached, cached: true });
     }
 
     if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({
-        fallback: true,
-        errorCode: "API_KEY_INVALID",
-        devMessage: isDev ? "GEMINI_API_KEY is missing from .env.local" : undefined,
-        tags: getFallbackTags(idea),
-      });
+      return NextResponse.json({ fallback: true, errorCode: "API_KEY_INVALID", tags: getFallbackTags(idea) });
     }
 
-    try {
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: { responseMimeType: "application/json" },
-      });
+    let rawText: string | undefined;
+    let modelUsed = "";
 
-      // ── Prompt — explicit schema prevents malformed JSON ─────────────────────
+    try {
       const prompt = `Generate exactly 13 Etsy tags for: "${idea}".
 Rules: each tag 20 characters or fewer, mix broad and specific buyer keywords, include "printable", "pdf", "digital" variations.
 
-Return ONLY this JSON (no markdown, no extra text):
-{
-  "tags": ["tag one","tag two","tag three","tag four","tag five","tag six","tag seven","tag eight","tag nine","tag ten","tag eleven","tag twelve","tag thirteen"]
-}`;
+CRITICAL: Return ONLY valid JSON. Do not include markdown. Do not include \`\`\`json fences. Do not include explanations or comments. The response must be directly parseable by JSON.parse().
 
-      const result = await withGeminiRetry(
-        () => model.generateContent(prompt),
-        { label: "generate-tags", delayMs: 4000 }
-      );
-      const cleaned = result.response.text().replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const parsed = JSON.parse(cleaned);
+Return exactly this structure:
+{"tags":["tag one","tag two","tag three","tag four","tag five","tag six","tag seven","tag eight","tag nine","tag ten","tag eleven","tag twelve","tag thirteen"]}`;
 
+      const call = await geminiCall(process.env.GEMINI_API_KEY, prompt, { responseMimeType: "application/json" });
+      rawText = call.rawText;
+      modelUsed = call.modelUsed;
+
+      const parsed = extractJson<{ tags: string[] }>(rawText);
       if (parsed.tags && Array.isArray(parsed.tags)) {
-        parsed.tags = parsed.tags.map((tag: string) =>
-          tag.length > 20 ? tag.substring(0, 20) : tag
-        );
+        parsed.tags = parsed.tags.map((tag: string) => tag.length > 20 ? tag.substring(0, 20) : tag);
       }
 
       setServerCache(key, parsed);
-      return NextResponse.json(parsed);
+      return NextResponse.json({ ...parsed, modelUsed });
 
     } catch (error: unknown) {
       const { message, code } = parseGeminiError(error);
-      if (isDev) console.error(`[generate-tags][${code}]`, message);
-      return NextResponse.json({
-        fallback: true,
-        errorCode: code,
-        devMessage: isDev ? message : undefined,
-        tags: getFallbackTags(idea),
-      });
+      const devMessage = error instanceof Error ? error.message : message;
+      console.error(`[generate-tags][${code}]`, devMessage);
+      return NextResponse.json({ fallback: true, errorCode: code, devMessage, rawPreview: rawText?.slice(0, 500), tags: getFallbackTags(idea) });
     }
   });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { NicheData } from "@/data/niches";
 import { trackEvent, isAtLimit, incrementTodayUsage, remainingToday } from "@/lib/analytics";
 import { getCache, setCache, cacheKey } from "@/lib/cache";
@@ -302,6 +302,16 @@ export default function IdeaCard({ idea, index, isPremium, platform, nicheData, 
   const [loadingExamples, setLoadingExamples] = useState(false);
   const [showExamples, setShowExamples] = useState(false);
 
+  // Remaining usage counts — must be state (not inline remainingToday() calls) to
+  // avoid React hydration mismatches. localStorage is absent on the server so
+  // remainingToday() would return the full limit there but a real value on the client.
+  const [remainingSeo, setRemainingSeo] = useState<number | null>(null);
+  const [remainingTags, setRemainingTags] = useState<number | null>(null);
+  useEffect(() => {
+    setRemainingSeo(remainingToday("seo"));
+    setRemainingTags(remainingToday("tags"));
+  }, []);
+
   const [listing, setListing] = useState<ListingContent | null>(() => listingCache.get(idea.title) ?? null);
   const [loadingListing, setLoadingListing] = useState(false);
   const [listingError, setListingError] = useState("");
@@ -325,7 +335,7 @@ export default function IdeaCard({ idea, index, isPremium, platform, nicheData, 
     const cached = getCache<string[]>(ck);
     if (cached) { setSeoTitles(cached); setSeoFromCache(true); setShowSeo(true); return; }
     trackEvent("seo_generated", { idea: idea.title });
-    if (!isPremium) incrementTodayUsage("seo");
+    if (!isPremium) { incrementTodayUsage("seo"); setRemainingSeo(remainingToday("seo")); }
     setLoadingSeo(true); setShowSeo(true);
     try {
       const res = await fetch("/api/generate-seo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idea: idea.title }) });
@@ -346,7 +356,7 @@ export default function IdeaCard({ idea, index, isPremium, platform, nicheData, 
     const cached = getCache<string[]>(ck);
     if (cached) { setTags(cached); setTagsFromCache(true); setShowTags(true); return; }
     trackEvent("tags_generated", { idea: idea.title });
-    if (!isPremium) incrementTodayUsage("tags");
+    if (!isPremium) { incrementTodayUsage("tags"); setRemainingTags(remainingToday("tags")); }
     setLoadingTags(true); setShowTags(true);
     try {
       const res = await fetch("/api/generate-tags", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idea: idea.title }) });
@@ -513,11 +523,11 @@ export default function IdeaCard({ idea, index, isPremium, platform, nicheData, 
             </button>
 
             <button data-testid="seo-button" onClick={handleSeo} disabled={loadingSeo} className={`text-xs py-2 px-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 ${showSeo && seoTitles.length > 0 ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-700 hover:bg-blue-100"} disabled:cursor-not-allowed`}>
-              {loadingSeo ? <Spinner size={12} /> : "✦"} SEO {!isPremium && <span className="opacity-60 text-xs">({remainingToday("seo")})</span>}
+              {loadingSeo ? <Spinner size={12} /> : "✦"} SEO {!isPremium && remainingSeo !== null && <span className="opacity-60 text-xs">({remainingSeo})</span>}
             </button>
 
             <button data-testid="tags-button" onClick={handleTags} disabled={loadingTags} className={`text-xs py-2 px-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 ${showTags && tags.length > 0 ? "bg-orange-500 text-white" : "bg-orange-50 text-orange-600 hover:bg-orange-100"} disabled:cursor-not-allowed`}>
-              {loadingTags ? <Spinner size={12} /> : "#"} Tags {!isPremium && <span className="opacity-60 text-xs">({remainingToday("tags")})</span>}
+              {loadingTags ? <Spinner size={12} /> : "#"} Tags {!isPremium && remainingTags !== null && <span className="opacity-60 text-xs">({remainingTags})</span>}
             </button>
 
             <button data-testid="examples-button" onClick={handleExamples} disabled={loadingExamples} className={`col-span-2 text-xs py-2 px-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 ${showExamples && examples ? "bg-gray-700 text-white" : "bg-gray-50 text-gray-600 hover:bg-gray-100"} disabled:cursor-not-allowed`}>

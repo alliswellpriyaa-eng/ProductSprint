@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parseGeminiError } from "@/lib/geminiError";
+import { extractJson } from "@/lib/safeJson";
+import { geminiCall } from "@/lib/geminiCall";
 import { getFallbackIdeas } from "@/data/fallbackData";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
-import { withGeminiRetry } from "@/lib/geminiRetry";
 
 export const maxDuration = 60;
 
@@ -18,7 +18,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "niche and productType are required" }, { status: 400 });
     }
 
-    // ── Server cache check ────────────────────────────────────────────────────
     const key = serverCacheKey("ideas", niche, productType);
     const cached = getServerCache<{ ideas: unknown[] }>(key);
     if (cached) {
@@ -26,24 +25,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...cached, cached: true });
     }
 
-    // ── Missing key → fallback ────────────────────────────────────────────────
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json({
         fallback: true,
         errorCode: "API_KEY_INVALID",
-        devMessage: isDev ? "GEMINI_API_KEY is missing from .env.local" : undefined,
+        devMessage: "GEMINI_API_KEY is missing from environment",
         ideas: getFallbackIdeas(niche),
       });
     }
 
-    try {
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: { responseMimeType: "application/json" },
-      });
+    let rawText: string | undefined;
+    let modelUsed = "";
+    const t0 = Date.now();
 
-      // ── Upgraded prompt: specific, emotional, with market data ───────────────
+    try {
       const prompt = `You are an Etsy product research expert. Generate 10 highly profitable Etsy digital product ideas.
 
 Niche: "${niche}"
@@ -59,7 +54,9 @@ Rules for great ideas:
 
 For each idea include a REALISTIC market score based on actual Etsy trends.
 
-Return ONLY this JSON (no markdown, no extra text):
+CRITICAL: Return ONLY valid JSON. Do not include markdown. Do not include \`\`\`json fences. Do not include explanations or comments. The response must be directly parseable by JSON.parse().
+
+Return exactly this structure:
 {
   "ideas": [
     {
@@ -86,25 +83,32 @@ beginnerFriendly: true | false
 estimatedPriceRange: realistic Etsy price range string
 whyThisCouldSell: 1–2 sentences explaining the commercial opportunity`;
 
-      const result = await withGeminiRetry(
-        () => model.generateContent(prompt),
-        { label: "generate-ideas", delayMs: 4000 }
+      const call = await geminiCall(
+        process.env.GEMINI_API_KEY,
+        prompt,
+        { responseMimeType: "application/json" }
       );
-      const text = result.response.text();
-      const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const parsed = JSON.parse(cleaned);
+      rawText = call.rawText;
+      modelUsed = call.modelUsed;
+
+      const parsed = extractJson(rawText);
+      const payload = { ...(parsed as object), modelUsed, responseTime: Date.now() - t0 };
 
       setServerCache(key, parsed);
-      return NextResponse.json(parsed);
+      return NextResponse.json(payload);
 
     } catch (error: unknown) {
       const { message, code, raw } = parseGeminiError(error);
-      console.error(`[generate-ideas][${code}]`, raw ?? message);
+      const devMessage = error instanceof Error ? error.message : (raw ?? message);
+      console.error(`[generate-ideas][${code}]`, devMessage);
 
       return NextResponse.json({
         fallback: true,
         errorCode: code,
-        devMessage: raw ?? message,
+        devMessage,
+        rawPreview: rawText?.slice(0, 500),
+        modelUsed,
+        responseTime: Date.now() - t0,
         ideas: getFallbackIdeas(niche),
       });
     }

@@ -162,11 +162,18 @@ export default function Home() {
     ? user?.plan === "premium"
     : devPremiumOverride; // false in production; toggle in dev via localStorage
 
-  // Remaining uses today — server-side when monetization is on, localStorage otherwise
+  // Remaining uses today — server-side when monetization is on, localStorage otherwise.
+  // IMPORTANT: remainingFreeLocal must be state (not a plain variable) to avoid a
+  // React hydration mismatch. localStorage is unavailable on the server, so calling
+  // remainingToday() during SSR returns the full limit (e.g. 3), while the client
+  // reads the real value (e.g. 1). We initialize to null and populate after mount.
   const remainingFreeServer = monetizationEnabled
     ? Math.max(0, (user?.limits?.generate_ideas ?? 3) - (user?.usage?.generate_ideas ?? 0))
     : null;
-  const remainingFreeLocal = remainingToday("ideas");
+  const [remainingFreeLocal, setRemainingFreeLocal] = useState<number | null>(null);
+  useEffect(() => {
+    setRemainingFreeLocal(remainingToday("ideas"));
+  }, []);
   const remainingFreeDisplay = remainingFreeServer ?? remainingFreeLocal;
 
   const atLimit = isPremium
@@ -234,29 +241,59 @@ export default function Home() {
         openEarlyAccess("limit_reached");
         return;
       }
-      // Hard error (400/500 with no fallback data)
-      if (!res.ok) throw new Error(data.error || "Failed to generate ideas");
-
-      // Soft fallback: API returned sample data instead of crashing
-      if (data.fallback) {
-        setIdeasFallback({ errorCode: data.errorCode, devMessage: data.devMessage });
+      // Step 10/15: If the API returns fallback ideas in the body, ALWAYS route
+      // through DemoBanner (yellow) — NEVER show the red ErrorBanner. Only throw
+      // when there is truly no content to show (e.g. 401/403/missing body).
+      if (!res.ok && !data?.ideas?.length) {
+        throw new Error(data?.error || "Failed to generate ideas");
       }
+
+      // Soft fallback: API returned sample data instead of crashing (200 + fallback:true)
+      // OR hard status but response still contained fallback ideas.
+      if (data.fallback || !res.ok) {
+        setIdeasFallback({ errorCode: data.errorCode ?? "UNKNOWN", devMessage: data.devMessage });
+        // Step 13: track fallback event
+        trackEvent("ai_fallback_used", {
+          feature: "ideas",
+          niche,
+          productType,
+          errorCode: data.errorCode,
+          fallbackUsed: true,
+          environment: process.env.NODE_ENV,
+        });
+      } else {
+        // Step 13: track AI success
+        trackEvent("ai_success", {
+          feature: "ideas",
+          niche,
+          productType,
+          modelUsed: data.modelUsed,
+          responseTime: data.responseTime,
+          environment: process.env.NODE_ENV,
+          fallbackUsed: false,
+        });
+      }
+
       setIdeas(data.ideas);
 
-      // Cache the result (don't cache fallback data — it's generic)
-      if (!data.fallback && data.ideas?.length > 0) {
+      // Step 12: Cache ONLY successful AI responses — never cache fallback data
+      if (!data.fallback && res.ok && data.ideas?.length > 0) {
         setCache(ck, data.ideas);
-        if (data.cached) setIdeasFromCache(true); // server cache hit
+        if (data.cached) setIdeasFromCache(true);
       }
 
       // Track success + increment soft-limit counter
       trackEvent("ideas_generated", { niche, productType, count: data.ideas?.length ?? 0 });
       if (!monetizationEnabled) incrementTodayUsage("ideas");
+      setRemainingFreeLocal(remainingToday("ideas"));
 
       // Refresh usage counts so the badge stays up to date
       if (monetizationEnabled) refreshUser();
     } catch (e: unknown) {
-      setIdeasError(e instanceof Error ? e.message : "Something went wrong");
+      // Step 15: NEVER expose raw Gemini stack traces to users.
+      // Only set ideasError when there is truly no fallback content to show.
+      setIdeasError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+      trackEvent("ai_parse_error", { feature: "ideas", niche, productType, environment: process.env.NODE_ENV });
     } finally {
       setLoadingIdeas(false);
     }
@@ -276,7 +313,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             {/* Free usage counter (pre-monetization phase) */}
-            {!monetizationEnabled && !isPremium && (
+            {!monetizationEnabled && !isPremium && remainingFreeDisplay !== null && (
               <span className="text-xs text-gray-400 hidden sm:block">
                 {remainingFreeDisplay} free {remainingFreeDisplay === 1 ? "sprint" : "sprints"} left today
               </span>
@@ -372,7 +409,7 @@ export default function Home() {
                 >
                   {loadingIdeas ? <><Spinner /> Scouting products…</> : atLimit ? "🔒 Daily limit reached" : <>⚡ Start Product Sprint</>}
                 </button>
-                {!isPremium && !atLimit && (
+                {!isPremium && !atLimit && remainingFreeDisplay !== null && (
                   <span className="text-xs text-gray-400">{remainingFreeDisplay} free {remainingFreeDisplay === 1 ? "sprint" : "sprints"} remaining today</span>
                 )}
                 {atLimit && (
@@ -391,8 +428,17 @@ export default function Home() {
               </div>
             )}
 
-            {ideasError && <ErrorBanner message={ideasError} className="mb-6" onRetry={handleGenerateIdeas} />}
-            {ideasFallback && !ideasError && (
+            {/* Step 10/15: ONLY show red ErrorBanner when there is no fallback content at all.
+                If ideasFallback is set, there ARE ideas to show — use yellow DemoBanner only. */}
+            {ideasError && !ideasFallback && (
+              <DemoBanner
+                errorCode="UNKNOWN"
+                devMessage={ideasError}
+                onRetry={handleGenerateIdeas}
+                className="mb-6"
+              />
+            )}
+            {ideasFallback && (
               <DemoBanner
                 errorCode={ideasFallback.errorCode}
                 devMessage={ideasFallback.devMessage}

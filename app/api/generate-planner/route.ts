@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { parseGeminiError } from "@/lib/geminiError";
+import { extractJson } from "@/lib/safeJson";
+import { geminiCall } from "@/lib/geminiCall";
 import { FALLBACK_PLANNER_DAYS } from "@/data/fallbacks";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
 
-// Tell Vercel to allow up to 60 s for this function (Hobby plan max)
 export const maxDuration = 60;
 
 const isDev = process.env.NODE_ENV === "development";
-
-// Planner payloads are large — cache for 2 hours
 const PLANNER_TTL = 2 * 60 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
@@ -18,7 +16,6 @@ export async function POST(req: NextRequest) {
     const { niche } = await req.json();
     if (!niche) return NextResponse.json({ error: "niche is required" }, { status: 400 });
 
-    // ── Server cache check ──────────────────────────────────────────────────
     const key = serverCacheKey("planner", niche);
     const cached = getServerCache<{ days: unknown[] }>(key);
     if (cached) {
@@ -30,23 +27,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         fallback: true,
         errorCode: "API_KEY_INVALID",
-        devMessage: isDev ? "GEMINI_API_KEY is missing from .env.local" : undefined,
+        devMessage: "GEMINI_API_KEY is missing from environment",
         days: FALLBACK_PLANNER_DAYS,
       });
     }
 
-    try {
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    let rawText: string | undefined;
+    let modelUsed = "";
+    const t0 = Date.now();
 
-      // ── Upgraded prompt: actionable SprintDay schema ──────────────────────
+    try {
       const prompt = `You are an Etsy digital product launch coach. Create a detailed 30-day sprint plan for the "${niche}" niche.
 
 Each day should feel like a clear, actionable coaching instruction — not generic advice.
 Vary the products across the 30 days (different types: planners, trackers, worksheets, bundles).
 Make tasks specific and executable in 1–3 hours.
 
-Return ONLY this JSON with ALL 30 days — no extra text, no markdown:
+CRITICAL: Return ONLY valid JSON. Do not include markdown. Do not include \`\`\`json fences. Do not include explanations or comments. The response must be directly parseable by JSON.parse().
+
+Return ALL 30 days using exactly this structure:
 {"days":[{"day":1,"phase":"Setup","title":"Product name (specific)","goal":"One actionable sentence","tasks":["Specific task A","Specific task B","Specific task C"],"keywords":["etsy kw1","etsy kw2","etsy kw3"],"pricing":"$4.99–$7.99","time":"2 hrs","effort":"Easy","category":"Research","estimatedTime":"2 hrs","completed":false}]}
 
 Rules:
@@ -58,82 +57,32 @@ Rules:
 - Keep titles short and specific (e.g. "Kids Morning Routine Chart" not "Create product")
 - Include all 30 days`;
 
-      const generateRequest = {
-        contents: [{ role: "user" as const, parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          thinkingConfig: { thinkingBudget: 0 },
-        } as Record<string, unknown>,
-      };
+      const call = await geminiCall(
+        process.env.GEMINI_API_KEY,
+        prompt,
+        { responseMimeType: "application/json" }
+      );
+      rawText = call.rawText;
+      modelUsed = call.modelUsed;
 
-      // ── Auto-retry on 503 (server overload) — wait 5s then try once more ──
-      const is503 = (e: unknown) => {
-        const msg = e instanceof Error ? e.message : String(e);
-        return msg.includes("503") || msg.includes("high demand") || msg.includes("Service Unavailable");
-      };
-
-      const runGenerate = () => Promise.race([
-        model.generateContent(generateRequest),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Request timed out after 55s")), 55_000)
-        ),
-      ]);
-
-      let result;
-      try {
-        result = await runGenerate();
-      } catch (firstErr: unknown) {
-        if (is503(firstErr)) {
-          if (isDev) console.log("[generate-planner] 503 on first attempt, retrying in 5s…");
-          await new Promise((r) => setTimeout(r, 5000));
-          result = await runGenerate(); // throws if still failing → caught by outer catch
-        } else {
-          throw firstErr;
-        }
-      }
-      const rawText = result.response.text();
-
-      if (!rawText || rawText.trim().length < 10) {
-        throw new SyntaxError("Gemini returned empty response");
-      }
-
-      // Strip markdown fences, then extract the JSON object/array
-      // by finding the first { or [ and the last matching } or ]
-      const stripped = rawText
-        .replace(/```json\s*/gi, "")
-        .replace(/```\s*/g, "")
-        .trim();
-
-      const firstBrace = stripped.indexOf("{");
-      const firstBracket = stripped.indexOf("[");
-      const startIdx =
-        firstBrace === -1 ? firstBracket :
-        firstBracket === -1 ? firstBrace :
-        Math.min(firstBrace, firstBracket);
-
-      if (startIdx === -1) throw new SyntaxError("No JSON object found in response");
-
-      const openChar = stripped[startIdx];
-      const closeChar = openChar === "{" ? "}" : "]";
-      const endIdx = stripped.lastIndexOf(closeChar);
-      if (endIdx === -1) throw new SyntaxError("Unterminated JSON in response");
-
-      const jsonStr = stripped.slice(startIdx, endIdx + 1);
-      const parsed = JSON.parse(jsonStr);
-      const days = Array.isArray(parsed) ? parsed : (parsed.days ?? []);
-      const payload = { days };
+      const parsed = extractJson<{ days?: unknown[] } | unknown[]>(rawText);
+      const days = Array.isArray(parsed) ? parsed : ((parsed as { days?: unknown[] }).days ?? []);
+      const payload = { days, modelUsed, responseTime: Date.now() - t0 };
 
       setServerCache(key, payload, PLANNER_TTL);
       return NextResponse.json(payload);
 
     } catch (error: unknown) {
       const { message, code } = parseGeminiError(error);
-      const rawMessage = error instanceof Error ? error.message : String(error);
-      if (isDev) console.error(`[generate-planner][${code}]`, rawMessage);
+      const devMessage = error instanceof Error ? error.message : message;
+      console.error(`[generate-planner][${code}]`, devMessage);
       return NextResponse.json({
         fallback: true,
         errorCode: code,
-        devMessage: isDev ? rawMessage : undefined,
+        devMessage,
+        rawPreview: rawText?.slice(0, 500),
+        modelUsed,
+        responseTime: Date.now() - t0,
         days: FALLBACK_PLANNER_DAYS,
       });
     }

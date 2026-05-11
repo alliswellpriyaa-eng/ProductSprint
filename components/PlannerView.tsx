@@ -334,6 +334,9 @@ export default function PlannerView({ niche: parentNiche, isPremium, onUpgradeCl
   const [fallback, setFallback] = useState<{ errorCode?: string; devMessage?: string } | null>(null);
   const [actionMode, setActionMode] = useState(false);
   const [planFromCache, setPlanFromCache] = useState(false);
+  // Hydration-safe remaining count — read from localStorage only after mount
+  const [remainingPlanner, setRemainingPlanner] = useState<number | null>(null);
+  useEffect(() => { setRemainingPlanner(remainingToday("planner")); }, []);
 
   // Load completion state from localStorage
   const getCompletionKey = (niche: string) => `ps_plan_completed_${niche}`;
@@ -438,7 +441,7 @@ export default function PlannerView({ niche: parentNiche, isPremium, onUpgradeCl
           <p className="text-xs text-gray-400 mt-3 flex items-center gap-1 flex-wrap">
             ⚡ Free: 1 sprint plan/day · Daily tasks, keywords & pricing unlock with{" "}
             <button onClick={() => onUpgradeClick("planner_locked")} className="text-purple-500 font-semibold hover:underline">Sprint Pro</button>
-            {" "}· {remainingToday("planner")} remaining today
+            {remainingPlanner !== null && <>{" "}· {remainingPlanner} remaining today</>}
           </p>
         )}
       </div>

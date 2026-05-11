@@ -1,7 +1,5 @@
 "use client";
 
-import ErrorBanner from "@/components/ErrorBanner";
-
 interface DemoBannerProps {
   errorCode?: string;
   devMessage?: string;
@@ -11,14 +9,14 @@ interface DemoBannerProps {
 
 const isDev = process.env.NODE_ENV === "development";
 
-// User-friendly labels for each error type in production
+// Step 10 — friendly UX copy. NEVER expose raw Gemini errors to users.
 const PROD_REASON: Record<string, string> = {
-  API_KEY_INVALID: "The AI service couldn't be reached.",
-  RATE_LIMIT: "AI is busy right now. Showing sample data. Please retry in 1 minute.",
-  SAFETY_BLOCK: "The AI declined this request.",
-  NETWORK: "A network error occurred.",
-  PARSE_ERROR: "The AI returned an unexpected format.",
-  UNKNOWN: "The AI service is temporarily unavailable.",
+  API_KEY_INVALID:  "AI is currently busy due to high demand.",
+  RATE_LIMIT:       "AI is currently busy due to high demand.",
+  SAFETY_BLOCK:     "AI is currently busy due to high demand.",
+  NETWORK:          "AI is currently busy due to high demand.",
+  PARSE_ERROR:      "AI is currently busy due to high demand.",
+  UNKNOWN:          "AI is currently busy due to high demand.",
 };
 
 export default function DemoBanner({ errorCode, devMessage, onRetry, className = "" }: DemoBannerProps) {
@@ -26,7 +24,7 @@ export default function DemoBanner({ errorCode, devMessage, onRetry, className =
 
   return (
     <div data-testid="demo-banner" className={`space-y-2 ${className}`}>
-      {/* Demo mode notice — always shown */}
+      {/* Step 10: yellow warning banner — NEVER red fatal error box */}
       <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
         <span className="text-lg flex-shrink-0">⚡</span>
         <div className="flex-1 min-w-0">
@@ -34,14 +32,14 @@ export default function DemoBanner({ errorCode, devMessage, onRetry, className =
             <span className="text-xs font-bold bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full uppercase tracking-wide">
               Demo Mode
             </span>
-            <span className="text-xs text-amber-700">
-              {isDev ? "AI unavailable — showing sample data" : `${reason} Showing sample results.`}
-            </span>
           </div>
-          {!isDev && (
-            <p className="text-xs text-amber-600 mt-0.5">
-              These are example results, not AI-generated. Try again in a moment.
-            </p>
+          {isDev ? (
+            <p className="text-xs text-amber-700 mt-0.5">AI unavailable — showing sample data</p>
+          ) : (
+            <>
+              <p className="text-xs text-amber-700 mt-0.5">{reason} Showing backup results for now.</p>
+              <p className="text-xs text-amber-600 mt-0.5">Please try again shortly.</p>
+            </>
           )}
         </div>
         {onRetry && (
@@ -54,9 +52,11 @@ export default function DemoBanner({ errorCode, devMessage, onRetry, className =
         )}
       </div>
 
-      {/* Dev-only: full error details */}
+      {/* Dev-only: full error details for debugging */}
       {isDev && devMessage && (
-        <ErrorBanner message={devMessage} onRetry={onRetry} />
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-mono break-all">
+          <span className="font-bold text-red-800">[dev] </span>{devMessage}
+        </div>
       )}
     </div>
   );
