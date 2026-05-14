@@ -447,7 +447,15 @@ export default function PlannerView({ niche: parentNiche, isPremium, onUpgradeCl
       </div>
 
       {error && <ErrorBanner message={error} className="mb-6" onRetry={handleGenerate} />}
-      {fallback && !error && <DemoBanner errorCode={fallback.errorCode} devMessage={fallback.devMessage} onRetry={handleGenerate} className="mb-6" />}
+      {fallback && !error && (
+        <DemoBanner
+          errorCode={fallback.errorCode}
+          devMessage={fallback.devMessage}
+          onRetry={handleGenerate}
+          className="mb-6"
+          subtitle="AI is busy right now — showing backup sprint plan."
+        />
+      )}
 
       {/* Results */}
       {planDays.length > 0 && (

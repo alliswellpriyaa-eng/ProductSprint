@@ -5,6 +5,8 @@ interface DemoBannerProps {
   devMessage?: string;
   onRetry?: () => void;
   className?: string;
+  /** Override the production subtitle shown to users (Step 9) */
+  subtitle?: string;
 }
 
 const isDev = process.env.NODE_ENV === "development";
@@ -19,7 +21,7 @@ const PROD_REASON: Record<string, string> = {
   UNKNOWN:          "AI is currently busy due to high demand.",
 };
 
-export default function DemoBanner({ errorCode, devMessage, onRetry, className = "" }: DemoBannerProps) {
+export default function DemoBanner({ errorCode, devMessage, onRetry, className = "", subtitle }: DemoBannerProps) {
   const reason = errorCode ? (PROD_REASON[errorCode] ?? PROD_REASON.UNKNOWN) : PROD_REASON.UNKNOWN;
 
   return (
@@ -35,6 +37,9 @@ export default function DemoBanner({ errorCode, devMessage, onRetry, className =
           </div>
           {isDev ? (
             <p className="text-xs text-amber-700 mt-0.5">AI unavailable — showing sample data</p>
+          ) : subtitle ? (
+            // Step 9: context-specific friendly message (e.g. planner: "AI is busy right now — showing backup sprint plan.")
+            <p className="text-xs text-amber-700 mt-0.5">{subtitle}</p>
           ) : (
             <>
               <p className="text-xs text-amber-700 mt-0.5">{reason} Showing backup results for now.</p>

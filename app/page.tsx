@@ -176,11 +176,14 @@ export default function Home() {
   }, []);
   const remainingFreeDisplay = remainingFreeServer ?? remainingFreeLocal;
 
+  // atLimit must be derived from state — never call isAtLimit() directly during render
+  // because it reads localStorage, which is unavailable on the server (hydration mismatch).
+  // We use remainingFreeLocal (which is null until after mount) so SSR always gets false.
   const atLimit = isPremium
     ? false
     : monetizationEnabled
       ? !!user && remainingFreeDisplay === 0
-      : isAtLimit("ideas");
+      : remainingFreeLocal !== null && isAtLimit("ideas");
 
   const nicheData = getNicheData(niche);
 
