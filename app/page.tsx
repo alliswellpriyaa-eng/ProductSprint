@@ -3,6 +3,9 @@
 import { useState, useCallback, useEffect } from "react";
 import IdeaCard, { type Idea } from "@/components/IdeaCard";
 import PlannerView from "@/components/PlannerView";
+import ResearchPanel from "@/components/ResearchPanel";
+import ListingBuilder from "@/components/ListingBuilder";
+import type { ResearchInsight } from "@/types/research";
 import { getNicheData } from "@/data/niches";
 import ErrorBanner from "@/components/ErrorBanner";
 import DemoBanner from "@/components/DemoBanner";
@@ -133,7 +136,9 @@ export default function Home() {
   const [ideasError, setIdeasError] = useState("");
   const [ideasFallback, setIdeasFallback] = useState<{ errorCode?: string; devMessage?: string } | null>(null);
   const [ideasFromCache, setIdeasFromCache] = useState(false);
-  const [activeTab, setActiveTab] = useState<"generator" | "planner">("generator");
+  const [activeTab, setActiveTab] = useState<"generator" | "planner" | "research">("generator");
+  const [researchInsight, setResearchInsight] = useState<ResearchInsight | null>(null);
+  const [researchInput, setResearchInput] = useState<string>("");
   const [platform, setPlatform] = useState<Platform>("etsy");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalReason, setAuthModalReason] = useState<string | undefined>();
@@ -311,7 +316,7 @@ export default function Home() {
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-orange-500 flex items-center justify-center text-white font-bold text-sm shadow">PS</div>
             <div>
               <h1 className="text-lg font-bold text-gray-900 leading-none">ProductSprint</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Turn ideas into Etsy products in 30 days</p>
+              <p className="text-xs text-gray-400 mt-0.5">Launch your Etsy digital product faster with AI</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -340,12 +345,15 @@ export default function Home() {
       <main className="max-w-5xl mx-auto px-4 py-8">
 
         {/* ── Tabs ── */}
-        <div className="flex gap-2 mb-8 bg-white rounded-2xl p-1.5 shadow-sm border border-purple-100 w-fit">
-          <button data-testid="tab-generator" onClick={() => setActiveTab("generator")} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${activeTab === "generator" ? "bg-purple-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+        <div className="flex gap-2 mb-8 bg-white rounded-2xl p-1.5 shadow-sm border border-purple-100 w-fit overflow-x-auto">
+          <button data-testid="tab-generator" onClick={() => setActiveTab("generator")} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${activeTab === "generator" ? "bg-purple-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
             ⚡ Sprint Starter
           </button>
-          <button data-testid="tab-planner" onClick={() => setActiveTab("planner")} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${activeTab === "planner" ? "bg-orange-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-            🗓 30-Day Sprint Plan {!isPremium && <span className="text-xs opacity-70">🔒</span>}
+          <button data-testid="tab-research" onClick={() => setActiveTab("research")} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${activeTab === "research" ? "bg-indigo-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+            🔍 Research
+          </button>
+          <button data-testid="tab-planner" onClick={() => setActiveTab("planner")} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === "planner" ? "bg-orange-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+            🗓 30-Day Sprint {!isPremium && <span className="text-xs opacity-70">🔒</span>}
           </button>
         </div>
 
@@ -488,6 +496,8 @@ export default function Home() {
                       platform={platform}
                       nicheData={nicheData}
                       onUpgradeClick={handleUpgradeClick}
+                      niche={niche}
+                      productType={productType}
                     />
                   ))}
                 </div>
@@ -502,10 +512,10 @@ export default function Home() {
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">How ProductSprint Works</p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
-                      { step: "1", icon: "💡", title: "Generate Ideas", desc: "AI finds 10 profitable products for your niche with market scores" },
-                      { step: "2", icon: "📊", title: "Validate Opportunity", desc: "See demand, competition & SEO opportunity for each idea" },
-                      { step: "3", icon: "📋", title: "Get Listing Copy", desc: "Generate your Etsy title, description & thumbnail text instantly" },
-                      { step: "4", icon: "🚀", title: "Follow the Sprint", desc: "30-day plan tells you exactly what to create and publish each day" },
+                      { step: "1", icon: "💡", title: "Generate ideas", desc: "AI finds 10 profitable products for your niche with market scores" },
+                      { step: "2", icon: "📊", title: "Validate opportunity", desc: "See demand, competition & SEO scores — export a full Etsy pack instantly" },
+                      { step: "3", icon: "🗓", title: "Follow 30-day sprint", desc: "Daily tasks, keywords & milestones guide you from idea to listed product" },
+                      { step: "4", icon: "🚀", title: "Launch your Etsy product", desc: "Go live with a ready-to-sell listing, thumbnail text & pricing in hand" },
                     ].map(({ step, icon, title, desc }) => (
                       <div key={step} className="flex flex-col items-center text-center gap-2 p-3 rounded-xl bg-gray-50">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-orange-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{step}</div>
@@ -539,7 +549,27 @@ export default function Home() {
         )}
 
         {/* ════════════════════════
-            TAB 2 — PLANNER
+            TAB 2 — RESEARCH
+        ════════════════════════ */}
+        {activeTab === "research" && !researchInsight && (
+          <ResearchPanel
+            onGenerateListing={(insight, input) => {
+              setResearchInsight(insight);
+              setResearchInput(input);
+              trackEvent("generate_listing_from_research", { input });
+            }}
+          />
+        )}
+        {activeTab === "research" && researchInsight && (
+          <ListingBuilder
+            insight={researchInsight}
+            researchInput={researchInput}
+            onBack={() => setResearchInsight(null)}
+          />
+        )}
+
+        {/* ════════════════════════
+            TAB 3 — PLANNER
         ════════════════════════ */}
         {activeTab === "planner" && (
           <PlannerView

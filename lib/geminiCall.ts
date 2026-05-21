@@ -9,7 +9,7 @@ import { GoogleGenerativeAI, type GenerateContentRequest } from "@google/generat
 import { retryGemini } from "@/lib/retryGemini";
 import { withTimeout } from "@/lib/withTimeout";
 
-const DEFAULT_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"] as const;
+const DEFAULT_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"] as const;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 type GenerateInput = string | GenerateContentRequest;

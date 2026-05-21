@@ -1,0 +1,95 @@
+import { NextRequest, NextResponse } from "next/server";
+import { parseGeminiError } from "@/lib/geminiError";
+import { extractJson } from "@/lib/safeJson";
+import { geminiCall } from "@/lib/geminiCall";
+import { withUsageCheck } from "@/lib/apiAuth";
+import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
+
+export const maxDuration = 60;
+
+const TTL_4H = 4 * 60 * 60 * 1000;
+const MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"] as const;
+
+export async function POST(req: NextRequest) {
+  return withUsageCheck(req, "generate_etsy_pack", async (_userId) => {
+    const { idea } = await req.json();
+    if (!idea) return NextResponse.json({ error: "idea is required" }, { status: 400 });
+
+    const key = serverCacheKey("etsy_pack", idea);
+    const cached = getServerCache<object>(key);
+    if (cached) {
+      return NextResponse.json({ ...cached, cached: true });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { fallback: true, errorCode: "API_KEY_INVALID", devMessage: "GEMINI_API_KEY is not set" },
+        { status: 500 }
+      );
+    }
+
+    let rawText: string | undefined;
+    let modelUsed = "";
+    const startTime = Date.now();
+
+    try {
+      const prompt = `You are an expert Etsy seller and digital product marketer. Generate a complete Etsy Export Pack for this product idea:
+
+Product: "${idea}"
+
+CRITICAL: Return ONLY valid JSON, no markdown fences, no comments, directly parseable by JSON.parse().
+
+Return exactly this structure:
+{
+  "seoTitle": "Etsy-optimized listing title under 140 characters, keyword-rich, use | as separator",
+  "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"],
+  "description": "Full Etsy listing description of 150-200 words. Start with buyer pain point, sell the transformation, list what is included, end with a clear call to action. Warm and friendly tone.",
+  "pricing": "$X–$Y recommended price range for this digital product",
+  "canvaInstructions": "Step-by-step Canva design instructions: document size, colour palette (3 hex codes), font pairing, layout tips, and 3 specific design tips for this exact product type.",
+  "thumbnailText": "Short punchy overlay text for product thumbnail (max 6 words, all-caps style)",
+  "pinterestTitle": "Pinterest pin title optimised for Pinterest SEO (max 100 characters)",
+  "pinterestDescription": "Pinterest pin description with natural keywords for this product (150-200 characters)",
+  "reelCaption": "Short Instagram/TikTok caption with a strong hook under 150 characters including 3-5 relevant hashtags",
+  "launchChecklist": ["Launch step 1","Launch step 2","Launch step 3","Launch step 4","Launch step 5","Launch step 6","Launch step 7"]
+}
+
+Rules for tags: each tag must be under 20 characters, use buyer search terms, no punctuation.
+Rules for launchChecklist: 5 to 7 actionable steps a beginner Etsy seller should take on launch day.`;
+
+      const call = await geminiCall(
+        process.env.GEMINI_API_KEY,
+        prompt,
+        { responseMimeType: "application/json" },
+        { models: MODELS }
+      );
+      rawText = call.rawText;
+      modelUsed = call.modelUsed;
+
+      const parsed = extractJson(rawText);
+      const responseTime = Date.now() - startTime;
+
+      setServerCache(key, { ...(parsed as object), modelUsed }, TTL_4H);
+
+      console.log({ route: "generate-etsy-pack", model: modelUsed, responseTime, success: true, fallback: false });
+
+      return NextResponse.json({
+        ...(parsed as object),
+        modelUsed,
+        rawPreview: rawText.slice(0, 200),
+        responseTime,
+      });
+    } catch (error: unknown) {
+      const { message, code, raw } = parseGeminiError(error);
+      const devMessage = error instanceof Error ? error.message : (raw ?? message);
+      const responseTime = Date.now() - startTime;
+
+      console.log({ route: "generate-etsy-pack", model: modelUsed, responseTime, success: false, fallback: true });
+      console.error(`[generate-etsy-pack][${code}]`, devMessage);
+
+      return NextResponse.json(
+        { fallback: true, errorCode: code, devMessage, rawPreview: rawText?.slice(0, 500), modelUsed, responseTime },
+        { status: 500 }
+      );
+    }
+  });
+}

@@ -9,9 +9,12 @@ export type EarlyAccessSource =
   | "limit_reached"
   | "premium_click"
   | "export_pdf"
+  | "export_pack_locked"
   | "save_idea"
   | "planner_locked"
   | "advanced_examples"
+  | "pinterest_helper"
+  | "premium_feature_clicked"
   | "unknown";
 
 interface Props {
@@ -23,13 +26,13 @@ interface Props {
 // ─── Feature list shown in the modal ─────────────────────────────────────────
 
 const FEATURES = [
-  ["⚡", "Unlimited idea generations — no daily cap"],
-  ["🛠", "Sprint Blueprint — full product creation guides"],
-  ["📄", "Export PDF — download ready-to-use plans"],
+  ["📦", "Export Etsy Pack — SEO title, tags, description, checklist"],
+  ["📌", "Pinterest Helper — pin title, overlay text, hashtags"],
+  ["🎬", "Shorts Helper — hook, script, caption, call-to-action"],
   ["❤️", "Save Ideas — build your personal idea library"],
-  ["🗓", "Full 30-Day Sprint Plans with tasks & keywords"],
-  ["🏷", "13 Etsy tags per product idea"],
-  ["🎯", "Unlimited SEO title generation"],
+  ["🗓", "Full 30-Day Sprint Plans with daily tasks & keywords"],
+  ["⚡", "Unlimited idea generations — no daily cap"],
+  ["🎯", "Unlimited SEO title & Etsy tag generation"],
 ];
 
 // ─── EarlyAccessModal ─────────────────────────────────────────────────────────
@@ -43,13 +46,16 @@ export default function EarlyAccessModal({ isOpen, onClose, source = "unknown" }
   if (!isOpen) return null;
 
   const sourceLabel: Record<EarlyAccessSource, string> = {
-    limit_reached:     "You've hit today's free limit",
-    premium_click:     "This is a Pro feature",
-    export_pdf:        "PDF export is a Pro feature",
-    save_idea:         "Saving ideas is a Pro feature",
-    planner_locked:    "Full planner details are a Pro feature",
-    advanced_examples: "Advanced examples are a Pro feature",
-    unknown:           "Unlock the full experience",
+    limit_reached:           "You've hit today's free limit",
+    premium_click:           "This is a Pro feature",
+    export_pdf:              "PDF export is a Pro feature",
+    export_pack_locked:      "Export Etsy Pack is a Pro feature",
+    save_idea:               "Save Ideas is a Pro feature",
+    planner_locked:          "Full planner details are a Pro feature",
+    advanced_examples:       "Advanced examples are a Pro feature",
+    pinterest_helper:        "Pinterest Helper is a Pro feature",
+    premium_feature_clicked: "Unlock the full experience",
+    unknown:                 "Unlock the full experience",
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -121,9 +127,9 @@ export default function EarlyAccessModal({ isOpen, onClose, source = "unknown" }
             </div>
           ) : (
             <>
+              {/* Updated copy — "AI Etsy Product Launch Assistant" positioning */}
               <p className="text-sm text-gray-600 mb-4">
-                Unlock unlimited product ideas, full sprint plans, SEO titles,
-                tags, product breakdowns, and more.
+                Join creators building Etsy products faster with AI.
               </p>
 
               {/* Feature grid */}
