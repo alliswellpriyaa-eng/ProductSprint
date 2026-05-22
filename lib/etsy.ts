@@ -252,3 +252,148 @@ export function formatListingForPrompt(listing: EtsyListing | EtsySearchResult):
   if (listing.shop_name) lines.push(`Shop: ${listing.shop_name}`);
   return lines.join("\n");
 }
+
+// ─── Taxonomy types ───────────────────────────────────────────────────────────
+
+export interface TaxonomyNode {
+  id: number;
+  level: number;
+  name: string;
+  parent_id: number | null;
+  /** IDs of all ancestors plus this node, root-first */
+  full_path_taxonomy_ids: number[];
+  children: TaxonomyNode[];
+}
+
+export interface TaxonomyPropertyValue {
+  value_id: number;
+  name: string;
+  scale_id: number | null;
+  equal_to: string[];
+}
+
+export interface TaxonomyProperty {
+  property_id: number;
+  name: string;
+  display_name: string;
+  scales: Array<{ scale_id: number; display_name: string; description: string }>;
+  is_required: boolean;
+  supports_attributes: boolean;
+  supports_variations: boolean;
+  is_multivalued: boolean;
+  max_values_allowed: number | null;
+  possible_values: TaxonomyPropertyValue[];
+  selected_values: TaxonomyPropertyValue[];
+}
+
+// ─── Taxonomy API calls ───────────────────────────────────────────────────────
+
+/** In-process cache so we only fetch the taxonomy tree once per server lifetime. */
+let _taxonomyCache: TaxonomyNode[] | null = null;
+
+/**
+ * Fetch the full Etsy seller taxonomy tree.
+ * Returns a flat-ish array of root nodes, each with nested children.
+ * Results are memoised in-process so subsequent calls are free.
+ */
+export async function fetchTaxonomyNodes(apiKey: string): Promise<TaxonomyNode[]> {
+  if (_taxonomyCache) return _taxonomyCache;
+
+  try {
+    const url = `${ETSY_BASE}/seller-taxonomy/nodes`;
+    const res = await fetch(url, { headers: headers(apiKey) });
+    if (!res.ok) {
+      console.error(`[etsy] fetchTaxonomyNodes → ${res.status}`, await res.text().catch(() => ""));
+      return [];
+    }
+    const data = await res.json() as { results?: unknown[] };
+    const nodes = (data.results ?? []) as TaxonomyNode[];
+    _taxonomyCache = nodes;
+    return nodes;
+  } catch (e) {
+    console.error("[etsy] fetchTaxonomyNodes error:", e);
+    return [];
+  }
+}
+
+/**
+ * Fetch the listing properties (attributes) available for a specific taxonomy node.
+ * @param taxonomyId  The numeric id of the taxonomy node (e.g. 2078 for "Digital Downloads")
+ */
+export async function fetchTaxonomyProperties(
+  apiKey: string,
+  taxonomyId: number
+): Promise<TaxonomyProperty[]> {
+  try {
+    const url = `${ETSY_BASE}/seller-taxonomy/nodes/${taxonomyId}/properties`;
+    const res = await fetch(url, { headers: headers(apiKey) });
+    if (!res.ok) {
+      console.error(
+        `[etsy] fetchTaxonomyProperties(${taxonomyId}) → ${res.status}`,
+        await res.text().catch(() => "")
+      );
+      return [];
+    }
+    const data = await res.json() as { results?: unknown[] };
+    return (data.results ?? []) as TaxonomyProperty[];
+  } catch (e) {
+    console.error("[etsy] fetchTaxonomyProperties error:", e);
+    return [];
+  }
+}
+
+// ─── Taxonomy helpers ─────────────────────────────────────────────────────────
+
+/** Flatten a nested taxonomy tree into a single array of all nodes. */
+export function flattenTaxonomy(nodes: TaxonomyNode[]): TaxonomyNode[] {
+  const result: TaxonomyNode[] = [];
+  function walk(node: TaxonomyNode) {
+    result.push(node);
+    for (const child of node.children ?? []) walk(child);
+  }
+  for (const root of nodes) walk(root);
+  return result;
+}
+
+/**
+ * Resolve a human-readable category hint (e.g. "Digital Downloads > Patterns")
+ * to the best-matching Etsy taxonomy node.
+ *
+ * Strategy:
+ * 1. Try an exact case-insensitive name match on the deepest segment.
+ * 2. Fall back to the highest-scoring partial substring match.
+ * 3. If nothing matches, return null.
+ *
+ * @param nodes   Flat array from flattenTaxonomy()
+ * @param hint    Free-text category string from AI output or user input
+ */
+export function resolveCategoryPath(
+  nodes: TaxonomyNode[],
+  hint: string
+): TaxonomyNode | null {
+  if (!hint || nodes.length === 0) return null;
+
+  const segments = hint
+    .split(/[>\/|,]/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  // Score each node: more matching segments = higher score; deeper level preferred
+  let best: TaxonomyNode | null = null;
+  let bestScore = -1;
+
+  for (const node of nodes) {
+    const nameLower = node.name.toLowerCase();
+    let score = 0;
+    for (const seg of segments) {
+      if (nameLower === seg) score += 2;          // exact match
+      else if (nameLower.includes(seg)) score += 1; // partial match
+    }
+    if (score > bestScore || (score === bestScore && node.level > (best?.level ?? -1))) {
+      best = node;
+      bestScore = score;
+    }
+  }
+
+  return bestScore > 0 ? best : null;
+}
