@@ -117,12 +117,12 @@ export async function searchListings(
   limit = 5
 ): Promise<EtsySearchResult[]> {
   try {
-    // Etsy v3: array params use [] suffix; sort_on valid values: created|ending|price|views|score_relevance
+    // Etsy v3: array params use [] suffix; sort_on valid values: created|price|updated|score
     const url =
       `${ETSY_BASE}/listings/active` +
       `?keywords=${encodeURIComponent(keyword)}` +
       `&limit=${limit}` +
-      `&sort_on=score_relevance` +
+      `&sort_on=score` +
       `&includes[]=Images`;
 
     const res = await fetch(url, { headers: headers(apiKey) });
@@ -161,7 +161,7 @@ export async function fetchShopListings(
         const listUrl =
           `${ETSY_BASE}/shops/${shopId}/listings/active` +
           `?limit=${limit}` +
-          `&sort_on=score_relevance` +
+          `&sort_on=score` +
           `&includes[]=Images`;
         const listRes = await fetch(listUrl, { headers: headers(apiKey) });
         if (listRes.ok) {
