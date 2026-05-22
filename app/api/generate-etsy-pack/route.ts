@@ -4,11 +4,41 @@ import { extractJson } from "@/lib/safeJson";
 import { geminiCall } from "@/lib/geminiCall";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
+import { validateTags, tagBucketPromptBlock } from "@/lib/tagValidation";
 
 export const maxDuration = 60;
 
 const TTL_4H = 4 * 60 * 60 * 1000;
 const MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"] as const;
+
+function buildPackPrompt(idea: string): string {
+  return `You are an expert Etsy seller and digital product marketer. Generate a complete Etsy Export Pack for this product idea:
+
+Product: "${idea}"
+
+CRITICAL: Return ONLY valid JSON, no markdown fences, no comments, directly parseable by JSON.parse().
+
+Return exactly this structure:
+{
+  "seoTitle": "Etsy-optimized listing title under 140 characters, keyword-rich, use | as separator",
+  "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"],
+  "description": "Full Etsy listing description of 150-200 words. CRITICAL SEO RULE: The very first sentence (the first ~160 characters Etsy indexes for search ranking) must be a natural prose sentence that organically includes your 2-3 most important search keywords — do NOT begin with bullets, emoji, or section headers. After that opening sentence, use formatting freely. Start with buyer pain point, sell the transformation, list what is included, end with a clear call to action. Warm and friendly tone.",
+  "pricing": "$X–$Y recommended price range for this digital product",
+  "canvaInstructions": "Step-by-step Canva design instructions: document size, colour palette (3 hex codes), font pairing, layout tips, and 3 specific design tips for this exact product type.",
+  "thumbnailText": "Short punchy overlay text for product thumbnail (max 6 words, all-caps style)",
+  "pinterestTitle": "Pinterest pin title optimised for Pinterest SEO (max 100 characters)",
+  "pinterestDescription": "Pinterest pin description with natural keywords for this product (150-200 characters)",
+  "reelCaption": "Short Instagram/TikTok caption with a strong hook under 150 characters including 3-5 relevant hashtags",
+  "launchChecklist": ["Launch step 1","Launch step 2","Launch step 3","Launch step 4","Launch step 5","Launch step 6","Launch step 7"]
+}
+
+TAG RULES — follow exactly:
+${tagBucketPromptBlock()}
+- Each tag must be 20 characters or fewer (hard limit)
+- Use real buyer search terms, no punctuation, no special characters
+
+Rules for launchChecklist: 5 to 7 actionable steps a beginner Etsy seller should take on launch day.`;
+}
 
 export async function POST(req: NextRequest) {
   return withUsageCheck(req, "generate_etsy_pack", async (_userId) => {
@@ -33,28 +63,7 @@ export async function POST(req: NextRequest) {
     const startTime = Date.now();
 
     try {
-      const prompt = `You are an expert Etsy seller and digital product marketer. Generate a complete Etsy Export Pack for this product idea:
-
-Product: "${idea}"
-
-CRITICAL: Return ONLY valid JSON, no markdown fences, no comments, directly parseable by JSON.parse().
-
-Return exactly this structure:
-{
-  "seoTitle": "Etsy-optimized listing title under 140 characters, keyword-rich, use | as separator",
-  "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"],
-  "description": "Full Etsy listing description of 150-200 words. CRITICAL SEO RULE: The very first sentence (the first ~160 characters Etsy indexes for search ranking) must be a natural prose sentence that organically includes your 2-3 most important search keywords — do NOT begin with bullets, emoji, or section headers. After that opening sentence, use formatting freely. Start with buyer pain point, sell the transformation, list what is included, end with a clear call to action. Warm and friendly tone.",
-  "pricing": "$X–$Y recommended price range for this digital product",
-  "canvaInstructions": "Step-by-step Canva design instructions: document size, colour palette (3 hex codes), font pairing, layout tips, and 3 specific design tips for this exact product type.",
-  "thumbnailText": "Short punchy overlay text for product thumbnail (max 6 words, all-caps style)",
-  "pinterestTitle": "Pinterest pin title optimised for Pinterest SEO (max 100 characters)",
-  "pinterestDescription": "Pinterest pin description with natural keywords for this product (150-200 characters)",
-  "reelCaption": "Short Instagram/TikTok caption with a strong hook under 150 characters including 3-5 relevant hashtags",
-  "launchChecklist": ["Launch step 1","Launch step 2","Launch step 3","Launch step 4","Launch step 5","Launch step 6","Launch step 7"]
-}
-
-Rules for tags: each tag must be under 20 characters, use buyer search terms, no punctuation.
-Rules for launchChecklist: 5 to 7 actionable steps a beginner Etsy seller should take on launch day.`;
+      const prompt = buildPackPrompt(idea);
 
       const call = await geminiCall(
         process.env.GEMINI_API_KEY,
@@ -65,15 +74,21 @@ Rules for launchChecklist: 5 to 7 actionable steps a beginner Etsy seller should
       rawText = call.rawText;
       modelUsed = call.modelUsed;
 
-      const parsed = extractJson(rawText);
+      const parsed = extractJson(rawText) as Record<string, unknown>;
       const responseTime = Date.now() - startTime;
 
-      setServerCache(key, { ...(parsed as object), modelUsed }, TTL_4H);
+      // Validate and sanitise tags in-place
+      if (Array.isArray(parsed.tags)) {
+        const { valid } = validateTags(parsed.tags as string[]);
+        parsed.tags = valid;
+      }
+
+      setServerCache(key, { ...parsed, modelUsed }, TTL_4H);
 
       console.log({ route: "generate-etsy-pack", model: modelUsed, responseTime, success: true, fallback: false });
 
       return NextResponse.json({
-        ...(parsed as object),
+        ...parsed,
         modelUsed,
         rawPreview: rawText.slice(0, 200),
         responseTime,

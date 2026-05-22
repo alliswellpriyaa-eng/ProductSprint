@@ -5,9 +5,34 @@ import { geminiCall } from "@/lib/geminiCall";
 import { getFallbackTags } from "@/data/fallbackData";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
+import {
+  validateTags,
+  assessDiversity,
+  tagBucketPromptBlock,
+  retryInstruction,
+  ETSY_MAX_TAGS,
+} from "@/lib/tagValidation";
 
 export const maxDuration = 60;
 const isDev = process.env.NODE_ENV === "development";
+const MAX_RETRIES = 2;
+
+function buildTagPrompt(idea: string, retryNote?: string): string {
+  return `Generate exactly ${ETSY_MAX_TAGS} Etsy tags for this digital product: "${idea}".
+
+${tagBucketPromptBlock()}
+
+Rules:
+- Each tag must be ${20} characters or fewer (hard limit — count carefully)
+- Use real buyer search terms, not vague adjectives
+- No punctuation, no special characters
+- Mix broad terms (e.g. "printable pdf") with specific ones (e.g. "teacher planner")
+${retryNote ? `\nPrevious attempt issue — ${retryNote}\n` : ""}
+CRITICAL: Return ONLY valid JSON, no markdown fences, directly parseable by JSON.parse().
+
+Return exactly this structure:
+{"tags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"]}`;
+}
 
 export async function POST(req: NextRequest) {
   return withUsageCheck(req, "generate_tags", async (_userId) => {
@@ -27,33 +52,76 @@ export async function POST(req: NextRequest) {
 
     let rawText: string | undefined;
     let modelUsed = "";
+    let lastIssues: string[] = [];
+    let lastMissing: string[] = [];
 
-    try {
-      const prompt = `Generate exactly 13 Etsy tags for: "${idea}".
-Rules: each tag 20 characters or fewer, mix broad and specific buyer keywords, include "printable", "pdf", "digital" variations.
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const retryNote =
+        attempt > 0
+          ? retryInstruction(lastIssues, lastMissing)
+          : undefined;
 
-CRITICAL: Return ONLY valid JSON. Do not include markdown. Do not include \`\`\`json fences. Do not include explanations or comments. The response must be directly parseable by JSON.parse().
+      try {
+        const prompt = buildTagPrompt(idea, retryNote);
+        const call = await geminiCall(process.env.GEMINI_API_KEY, prompt, { responseMimeType: "application/json" });
+        rawText = call.rawText;
+        modelUsed = call.modelUsed;
 
-Return exactly this structure:
-{"tags":["tag one","tag two","tag three","tag four","tag five","tag six","tag seven","tag eight","tag nine","tag ten","tag eleven","tag twelve","tag thirteen"]}`;
+        const parsed = extractJson<{ tags: string[] }>(rawText);
+        const { valid, issues, ok } = validateTags(parsed?.tags ?? []);
+        const diversity = assessDiversity(valid);
 
-      const call = await geminiCall(process.env.GEMINI_API_KEY, prompt, { responseMimeType: "application/json" });
-      rawText = call.rawText;
-      modelUsed = call.modelUsed;
+        if (isDev) {
+          console.log(`[generate-tags] attempt=${attempt} ok=${ok} diversity=${diversity.score}/7 missing=${diversity.missing.join(",")}`);
+        }
 
-      const parsed = extractJson<{ tags: string[] }>(rawText);
-      if (parsed.tags && Array.isArray(parsed.tags)) {
-        parsed.tags = parsed.tags.map((tag: string) => tag.length > 20 ? tag.substring(0, 20) : tag);
+        // Accept if validation passes AND diversity is acceptable (≥6/7 buckets)
+        if (ok && diversity.diverse) {
+          const result = { tags: valid };
+          setServerCache(key, result);
+          return NextResponse.json({ ...result, modelUsed, diversityScore: diversity.score });
+        }
+
+        // Not good enough — prepare retry context
+        lastIssues = issues;
+        lastMissing = diversity.missing;
+
+        // On final attempt, return best-effort result
+        if (attempt === MAX_RETRIES) {
+          if (isDev) console.warn(`[generate-tags] returning best-effort after ${MAX_RETRIES} retries`);
+          const result = { tags: valid.length > 0 ? valid : getFallbackTags(idea) };
+          setServerCache(key, result);
+          return NextResponse.json({
+            ...result,
+            modelUsed,
+            diversityScore: diversity.score,
+            diversityWarning: diversity.missing.length > 0
+              ? `Missing buckets: ${diversity.missing.join(", ")}`
+              : undefined,
+          });
+        }
+
+      } catch (error: unknown) {
+        const { message, code } = parseGeminiError(error);
+        const devMessage = error instanceof Error ? error.message : message;
+        console.error(`[generate-tags][attempt=${attempt}][${code}]`, devMessage);
+
+        if (attempt === MAX_RETRIES) {
+          return NextResponse.json({
+            fallback: true,
+            errorCode: code,
+            devMessage,
+            rawPreview: rawText?.slice(0, 500),
+            tags: getFallbackTags(idea),
+          });
+        }
+        // Network/API error — retry with same prompt
+        lastIssues = [`API error: ${message}`];
+        lastMissing = [];
       }
-
-      setServerCache(key, parsed);
-      return NextResponse.json({ ...parsed, modelUsed });
-
-    } catch (error: unknown) {
-      const { message, code } = parseGeminiError(error);
-      const devMessage = error instanceof Error ? error.message : message;
-      console.error(`[generate-tags][${code}]`, devMessage);
-      return NextResponse.json({ fallback: true, errorCode: code, devMessage, rawPreview: rawText?.slice(0, 500), tags: getFallbackTags(idea) });
     }
+
+    // Should never reach here
+    return NextResponse.json({ fallback: true, tags: getFallbackTags(idea) });
   });
 }
