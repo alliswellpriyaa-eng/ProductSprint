@@ -43,7 +43,7 @@ Return exactly this structure:
 {
   "seoTitle": "Etsy-optimized listing title under 140 characters, keyword-rich, use | as separator",
   "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"],
-  "description": "Full Etsy listing description of 150-200 words. Start with buyer pain point, sell the transformation, list what is included, end with a clear call to action. Warm and friendly tone.",
+  "description": "Full Etsy listing description of 150-200 words. CRITICAL SEO RULE: The very first sentence (the first ~160 characters Etsy indexes for search ranking) must be a natural prose sentence that organically includes your 2-3 most important search keywords — do NOT begin with bullets, emoji, or section headers. After that opening sentence, use formatting freely. Start with buyer pain point, sell the transformation, list what is included, end with a clear call to action. Warm and friendly tone.",
   "pricing": "$X–$Y recommended price range for this digital product",
   "canvaInstructions": "Step-by-step Canva design instructions: document size, colour palette (3 hex codes), font pairing, layout tips, and 3 specific design tips for this exact product type.",
   "thumbnailText": "Short punchy overlay text for product thumbnail (max 6 words, all-caps style)",
