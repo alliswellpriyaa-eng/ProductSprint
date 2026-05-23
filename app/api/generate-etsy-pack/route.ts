@@ -90,10 +90,32 @@ export async function POST(req: NextRequest) {
       // ── Validate and sanitise tags ──────────────────────────────────────────
       if (Array.isArray(parsed.tags)) {
         const { valid } = validateTags(parsed.tags as string[]);
-        parsed.tags = valid;
+        // Top-up: if Gemini returned fewer than 13, ask for the missing ones
+        if (valid.length < 13 && process.env.GEMINI_API_KEY) {
+          try {
+            const needed = 13 - valid.length;
+            const topupPrompt = `Generate exactly ${needed} additional Etsy tags for the digital product "${idea}".
+Existing tags (do not repeat): ${valid.join(", ")}.
+Rules: each tag ≤20 characters, unique buyer search terms, no punctuation.
+Return ONLY valid JSON: {"tags":["tag1","tag2",...]}`;
+            const topup = await geminiCall(
+              process.env.GEMINI_API_KEY,
+              topupPrompt,
+              { responseMimeType: "application/json" }
+            );
+            const extra = extractJson<{ tags: string[] }>(topup.rawText)?.tags ?? [];
+            const { valid: allValid } = validateTags([...valid, ...extra]);
+            parsed.tags = allValid;
+            console.log(`[generate-etsy-pack] tag top-up: ${valid.length} → ${allValid.length}`);
+          } catch {
+            parsed.tags = valid; // keep what we have
+          }
+        } else {
+          parsed.tags = valid;
+        }
       }
 
-      // ── Taxonomy resolution (runs in parallel with response prep) ───────────
+      // ── Taxonomy resolution ─────────────────────────────────────────────────
       let taxonomyId: number | null = null;
       let attributes: ReturnType<typeof fillAttributes> = [];
 
@@ -103,13 +125,25 @@ export async function POST(req: NextRequest) {
           if (categoryHint) {
             const nodes = await fetchTaxonomyNodes(etsyApiKey);
             const flat = flattenTaxonomy(nodes);
-            const node = resolveCategoryPath(flat, categoryHint);
+
+            // 1. Try the hint as-is
+            let node = resolveCategoryPath(flat, categoryHint);
+
+            // 2. If hint didn't mention "Digital Downloads", try prepending it
+            if (!node && !categoryHint.toLowerCase().includes("digital")) {
+              node = resolveCategoryPath(flat, `Digital Downloads > ${categoryHint}`);
+            }
+
+            // 3. Last resort: find the "Digital Downloads" root node directly
+            if (!node) {
+              node = flat.find((n) => n.name.toLowerCase() === "digital downloads") ?? null;
+              if (node) console.log(`[generate-etsy-pack] taxonomy: fell back to Digital Downloads root for hint "${categoryHint}"`);
+            }
 
             if (node) {
               taxonomyId = node.id;
               const properties = await fetchTaxonomyProperties(etsyApiKey, node.id);
 
-              // Build product context from the generated pack
               const context = {
                 title: typeof parsed.seoTitle === "string" ? parsed.seoTitle : idea,
                 tags: Array.isArray(parsed.tags) ? (parsed.tags as string[]) : [],
