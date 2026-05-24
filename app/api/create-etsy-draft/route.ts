@@ -30,6 +30,17 @@ interface EtsyTokenResponse {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
+ * Returns the x-api-key value Etsy expects: "keystring:sharedsecret".
+ * ETSY_CLIENT_ID is the keystring; ETSY_SHARED_SECRET is the shared secret.
+ * Required on every Etsy API call, even OAuth-authenticated ones.
+ */
+function etsyApiKeyHeader(): string {
+  const clientId = process.env.ETSY_CLIENT_ID!;
+  const sharedSecret = process.env.ETSY_SHARED_SECRET;
+  return sharedSecret && !clientId.includes(":") ? `${clientId}:${sharedSecret}` : clientId;
+}
+
+/**
  * Exchange a refresh token for a fresh access token.
  * Etsy uses PKCE (public client) — no client_secret is needed or accepted.
  * Only requires ETSY_CLIENT_ID + ETSY_REFRESH_TOKEN.
@@ -69,7 +80,7 @@ async function getShopId(accessToken: string): Promise<number> {
   const res = await fetch(`${ETSY_API_BASE}/users/me/shops`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      "x-api-key": process.env.ETSY_CLIENT_ID!,
+      "x-api-key": etsyApiKeyHeader(),
     },
   });
 
@@ -152,7 +163,7 @@ export async function POST(req: NextRequest) {
             method: "POST",
             headers: {
               Authorization: `Bearer ${accessToken}`,
-              "x-api-key": process.env.ETSY_CLIENT_ID!,
+              "x-api-key": etsyApiKeyHeader(),
               "Content-Type": "application/json",
             },
             body: JSON.stringify(etsyBody),
