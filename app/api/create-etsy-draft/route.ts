@@ -31,11 +31,11 @@ interface EtsyTokenResponse {
 
 /**
  * Exchange a refresh token for a fresh access token.
- * Requires ETSY_CLIENT_ID + ETSY_CLIENT_SECRET + ETSY_REFRESH_TOKEN.
+ * Etsy uses PKCE (public client) — no client_secret is needed or accepted.
+ * Only requires ETSY_CLIENT_ID + ETSY_REFRESH_TOKEN.
  */
 async function refreshEtsyToken(): Promise<string> {
   const clientId = process.env.ETSY_CLIENT_ID!;
-  const clientSecret = process.env.ETSY_CLIENT_SECRET!;
   const refreshToken = process.env.ETSY_REFRESH_TOKEN!;
 
   const res = await fetch(ETSY_TOKEN_URL, {
@@ -44,7 +44,6 @@ async function refreshEtsyToken(): Promise<string> {
     body: new URLSearchParams({
       grant_type: "refresh_token",
       client_id: clientId,
-      client_secret: clientSecret,
       refresh_token: refreshToken,
     }),
   });
@@ -118,9 +117,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "listing is required" }, { status: 400 });
     }
 
+    // Etsy uses PKCE — no client_secret exists. Only need client_id + refresh_token.
     const hasEtsyOAuth =
       !!process.env.ETSY_CLIENT_ID &&
-      !!process.env.ETSY_CLIENT_SECRET &&
       !!process.env.ETSY_REFRESH_TOKEN;
 
     const price = priceOverride ?? parsePriceFloat(listing.pricing?.suggested);
