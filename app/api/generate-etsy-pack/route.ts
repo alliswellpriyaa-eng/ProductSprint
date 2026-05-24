@@ -4,11 +4,51 @@ import { extractJson } from "@/lib/safeJson";
 import { geminiCall } from "@/lib/geminiCall";
 import { withUsageCheck } from "@/lib/apiAuth";
 import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
+import { validateTags, tagBucketPromptBlock } from "@/lib/tagValidation";
+import {
+  fetchTaxonomyNodes,
+  fetchTaxonomyProperties,
+  flattenTaxonomy,
+  resolveCategoryPath,
+} from "@/lib/etsy";
+import { fillAttributes } from "@/lib/fillAttributes";
 
 export const maxDuration = 60;
 
 const TTL_4H = 4 * 60 * 60 * 1000;
 const MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"] as const;
+
+function buildPackPrompt(idea: string): string {
+  return `You are an expert Etsy seller and digital product marketer. Generate a complete Etsy Export Pack for this product idea:
+
+Product: "${idea}"
+
+CRITICAL: Return ONLY valid JSON, no markdown fences, no comments, directly parseable by JSON.parse().
+
+Return exactly this structure:
+{
+  "seoTitle": "Etsy-optimized listing title under 140 characters, keyword-rich, use | as separator",
+  "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"],
+  "description": "Full Etsy listing description of 150-200 words. CRITICAL SEO RULE: The very first sentence (the first ~160 characters Etsy indexes for search ranking) must be a natural prose sentence that organically includes your 2-3 most important search keywords — do NOT begin with bullets, emoji, or section headers. After that opening sentence, use formatting freely. Start with buyer pain point, sell the transformation, list what is included, end with a clear call to action. Warm and friendly tone.",
+  "pricing": "$X–$Y recommended price range for this digital product",
+  "categoryHint": "Etsy seller taxonomy path for this product, e.g. 'Digital Downloads > Calendars & Planners' or 'Digital Downloads > Patterns > Sewing Patterns'",
+  "canvaInstructions": "Step-by-step Canva design instructions: document size, colour palette (3 hex codes), font pairing, layout tips, and 3 specific design tips for this exact product type.",
+  "thumbnailText": "Short punchy overlay text for product thumbnail (max 6 words, all-caps style)",
+  "pinterestTitle": "Pinterest pin title optimised for Pinterest SEO (max 100 characters)",
+  "pinterestDescription": "Pinterest pin description with natural keywords for this product (150-200 characters)",
+  "reelCaption": "Short Instagram/TikTok caption with a strong hook under 150 characters including 3-5 relevant hashtags",
+  "launchChecklist": ["Launch step 1","Launch step 2","Launch step 3","Launch step 4","Launch step 5","Launch step 6","Launch step 7"]
+}
+
+TAG RULES — follow exactly:
+${tagBucketPromptBlock()}
+- Each tag must be 20 characters or fewer (hard limit)
+- Use real buyer search terms, no punctuation, no special characters
+
+Rules for launchChecklist: 5 to 7 actionable steps a beginner Etsy seller should take on launch day.`;
+}
+
+// ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   return withUsageCheck(req, "generate_etsy_pack", async (_userId) => {
@@ -21,6 +61,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...cached, cached: true });
     }
 
+    const etsyApiKey = process.env.ETSY_API_KEY;
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { fallback: true, errorCode: "API_KEY_INVALID", devMessage: "GEMINI_API_KEY is not set" },
@@ -33,28 +74,7 @@ export async function POST(req: NextRequest) {
     const startTime = Date.now();
 
     try {
-      const prompt = `You are an expert Etsy seller and digital product marketer. Generate a complete Etsy Export Pack for this product idea:
-
-Product: "${idea}"
-
-CRITICAL: Return ONLY valid JSON, no markdown fences, no comments, directly parseable by JSON.parse().
-
-Return exactly this structure:
-{
-  "seoTitle": "Etsy-optimized listing title under 140 characters, keyword-rich, use | as separator",
-  "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"],
-  "description": "Full Etsy listing description of 150-200 words. Start with buyer pain point, sell the transformation, list what is included, end with a clear call to action. Warm and friendly tone.",
-  "pricing": "$X–$Y recommended price range for this digital product",
-  "canvaInstructions": "Step-by-step Canva design instructions: document size, colour palette (3 hex codes), font pairing, layout tips, and 3 specific design tips for this exact product type.",
-  "thumbnailText": "Short punchy overlay text for product thumbnail (max 6 words, all-caps style)",
-  "pinterestTitle": "Pinterest pin title optimised for Pinterest SEO (max 100 characters)",
-  "pinterestDescription": "Pinterest pin description with natural keywords for this product (150-200 characters)",
-  "reelCaption": "Short Instagram/TikTok caption with a strong hook under 150 characters including 3-5 relevant hashtags",
-  "launchChecklist": ["Launch step 1","Launch step 2","Launch step 3","Launch step 4","Launch step 5","Launch step 6","Launch step 7"]
-}
-
-Rules for tags: each tag must be under 20 characters, use buyer search terms, no punctuation.
-Rules for launchChecklist: 5 to 7 actionable steps a beginner Etsy seller should take on launch day.`;
+      const prompt = buildPackPrompt(idea);
 
       const call = await geminiCall(
         process.env.GEMINI_API_KEY,
@@ -65,16 +85,102 @@ Rules for launchChecklist: 5 to 7 actionable steps a beginner Etsy seller should
       rawText = call.rawText;
       modelUsed = call.modelUsed;
 
-      const parsed = extractJson(rawText);
+      const parsed = extractJson(rawText) as Record<string, unknown>;
+
+      // ── Validate and sanitise tags ──────────────────────────────────────────
+      if (Array.isArray(parsed.tags)) {
+        const { valid } = validateTags(parsed.tags as string[]);
+        // Top-up: if Gemini returned fewer than 13, ask for the missing ones
+        if (valid.length < 13 && process.env.GEMINI_API_KEY) {
+          try {
+            const needed = 13 - valid.length;
+            const topupPrompt = `Generate exactly ${needed} additional Etsy tags for the digital product "${idea}".
+Existing tags (do not repeat): ${valid.join(", ")}.
+Rules: each tag ≤20 characters, unique buyer search terms, no punctuation.
+Return ONLY valid JSON: {"tags":["tag1","tag2",...]}`;
+            const topup = await geminiCall(
+              process.env.GEMINI_API_KEY,
+              topupPrompt,
+              { responseMimeType: "application/json" }
+            );
+            const extra = extractJson<{ tags: string[] }>(topup.rawText)?.tags ?? [];
+            const { valid: allValid } = validateTags([...valid, ...extra]);
+            parsed.tags = allValid;
+            console.log(`[generate-etsy-pack] tag top-up: ${valid.length} → ${allValid.length}`);
+          } catch {
+            parsed.tags = valid; // keep what we have
+          }
+        } else {
+          parsed.tags = valid;
+        }
+      }
+
+      // ── Taxonomy resolution ─────────────────────────────────────────────────
+      let taxonomyId: number | null = null;
+      let attributes: ReturnType<typeof fillAttributes> = [];
+
+      if (etsyApiKey) {
+        try {
+          const categoryHint = typeof parsed.categoryHint === "string" ? parsed.categoryHint : undefined;
+          if (categoryHint) {
+            const nodes = await fetchTaxonomyNodes(etsyApiKey);
+            const flat = flattenTaxonomy(nodes);
+
+            // 1. Try the hint as-is
+            let node = resolveCategoryPath(flat, categoryHint);
+
+            // 2. If hint didn't mention "Digital Downloads", try prepending it
+            if (!node && !categoryHint.toLowerCase().includes("digital")) {
+              node = resolveCategoryPath(flat, `Digital Downloads > ${categoryHint}`);
+            }
+
+            // 3. Last resort: find the "Digital Downloads" root node directly
+            if (!node) {
+              node = flat.find((n) => n.name.toLowerCase() === "digital downloads") ?? null;
+              if (node) console.log(`[generate-etsy-pack] taxonomy: fell back to Digital Downloads root for hint "${categoryHint}"`);
+            }
+
+            if (node) {
+              taxonomyId = node.id;
+              const properties = await fetchTaxonomyProperties(etsyApiKey, node.id);
+
+              const context = {
+                title: typeof parsed.seoTitle === "string" ? parsed.seoTitle : idea,
+                tags: Array.isArray(parsed.tags) ? (parsed.tags as string[]) : [],
+                description: typeof parsed.description === "string" ? parsed.description : "",
+              };
+              attributes = fillAttributes(properties, context);
+            }
+          }
+        } catch (taxErr) {
+          console.warn("[generate-etsy-pack] taxonomy resolution failed (non-fatal):", taxErr);
+        }
+      }
+
       const responseTime = Date.now() - startTime;
 
-      setServerCache(key, { ...(parsed as object), modelUsed }, TTL_4H);
+      // Include taxonomy data in the response; strip the internal categoryHint hint
+      const output = {
+        ...parsed,
+        taxonomyId,
+        attributes,
+        modelUsed,
+      };
 
-      console.log({ route: "generate-etsy-pack", model: modelUsed, responseTime, success: true, fallback: false });
+      setServerCache(key, output, TTL_4H);
+
+      console.log({
+        route: "generate-etsy-pack",
+        model: modelUsed,
+        responseTime,
+        success: true,
+        fallback: false,
+        taxonomyId,
+        attributeCount: attributes.length,
+      });
 
       return NextResponse.json({
-        ...(parsed as object),
-        modelUsed,
+        ...output,
         rawPreview: rawText.slice(0, 200),
         responseTime,
       });

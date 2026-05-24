@@ -40,6 +40,7 @@ RULES:
 - Title must be under 140 characters and SEO-rich
 - Each tag must be under 20 characters
 - Description must be conversion-focused, human-sounding, NOT generic AI
+- Description MUST open with a plain prose sentence (covering the first ~160 characters) that weaves in your top 2-3 SEO keywords naturally — no bullets, no emoji, no headers before the first line break
 - Include emotional language from the triggers above
 - FAQ must address real buyer hesitations
 
@@ -47,7 +48,7 @@ Return ONLY valid JSON matching this structure exactly:
 {
   "title": "<etsy title under 140 chars, keyword-rich, benefit-led>",
   "tags": ["<tag1>","<tag2>","<tag3>","<tag4>","<tag5>","<tag6>","<tag7>","<tag8>","<tag9>","<tag10>","<tag11>","<tag12>","<tag13>"],
-  "description": "<full etsy description, 200-350 words, use line breaks, include what's included, who it's for, transformation promise, instant download CTA>",
+  "description": "<full etsy description, 200-350 words. CRITICAL SEO RULE: open with a plain prose sentence of ~140-160 characters that naturally weaves in your top 2-3 SEO keywords — no bullets, no emoji, no section headers in that first sentence. After that opening, use line breaks and formatting freely. Include what's included, who it's for, transformation promise, instant download CTA.>",
   "faq": [
     {"question": "<buyer question 1>", "answer": "<clear answer>"},
     {"question": "<buyer question 2>", "answer": "<clear answer>"},
