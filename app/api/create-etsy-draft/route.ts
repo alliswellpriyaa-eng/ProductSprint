@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
         }
 
         const created = await createRes.json() as { listing_id: number; state: string };
-        const draftUrl = `https://www.etsy.com/your/listings/edit/${created.listing_id}`;
+        const draftUrl = `https://www.etsy.com/your/listings/${created.listing_id}`;
 
         console.log(`[create-etsy-draft] created listing ${created.listing_id} for shop ${shopId}`);
 
