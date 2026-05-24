@@ -69,27 +69,36 @@ async function refreshEtsyToken(): Promise<string> {
 }
 
 /**
- * Fetch the authenticated user's first shop ID.
- * Falls back to ETSY_SHOP_ID env var if set (avoids an extra round-trip).
+ * Fetch the authenticated user's shop ID.
+ * Falls back to ETSY_SHOP_ID env var if set (avoids extra round-trips).
+ * Otherwise: GET /users/me → numeric user_id → GET /users/{id}/shops → shop_id.
  */
 async function getShopId(accessToken: string): Promise<number> {
   if (process.env.ETSY_SHOP_ID) {
     return parseInt(process.env.ETSY_SHOP_ID, 10);
   }
 
-  const res = await fetch(`${ETSY_API_BASE}/users/me/shops`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "x-api-key": etsyApiKeyHeader(),
-    },
-  });
+  const authHeaders = {
+    Authorization: `Bearer ${accessToken}`,
+    "x-api-key": etsyApiKeyHeader(),
+  };
 
-  if (!res.ok) {
-    throw new Error(`Failed to fetch shop: ${res.status} ${await res.text().catch(() => "")}`);
+  // Step 1: resolve "me" → numeric user_id
+  // Etsy rejects the string "me" on the /shops sub-resource, so we fetch it first.
+  const meRes = await fetch(`${ETSY_API_BASE}/users/me`, { headers: authHeaders });
+  if (!meRes.ok) {
+    throw new Error(`Failed to fetch user: ${meRes.status} ${await meRes.text().catch(() => "")}`);
   }
+  const meData = await meRes.json() as { user_id: number };
+  const userId = meData.user_id;
 
-  const data = await res.json() as { results?: Array<{ shop_id: number }> };
-  const shopId = data.results?.[0]?.shop_id;
+  // Step 2: GET /users/{user_id}/shops — returns the Shop object directly (not wrapped)
+  const shopRes = await fetch(`${ETSY_API_BASE}/users/${userId}/shops`, { headers: authHeaders });
+  if (!shopRes.ok) {
+    throw new Error(`Failed to fetch shop: ${shopRes.status} ${await shopRes.text().catch(() => "")}`);
+  }
+  const shopData = await shopRes.json() as { shop_id?: number; results?: Array<{ shop_id: number }> };
+  const shopId = shopData.shop_id ?? shopData.results?.[0]?.shop_id;
   if (!shopId) throw new Error("No Etsy shop found for this account.");
   return shopId;
 }
