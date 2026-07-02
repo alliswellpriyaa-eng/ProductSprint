@@ -312,7 +312,7 @@ export default function ListingBuilder({ insight, researchInput, onBack }: Props
             </div>
             <div className="mt-3 pt-3 border-t border-white/20">
               <p className="text-xs font-bold uppercase tracking-wider text-purple-200 mb-1">Emotional Hook</p>
-              <p className="text-sm leading-relaxed italic">"{listing.emotionalHook}"</p>
+              <p className="text-sm leading-relaxed italic">{listing.emotionalHook}</p>
             </div>
           </div>
 

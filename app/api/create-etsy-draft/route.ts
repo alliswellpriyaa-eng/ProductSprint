@@ -149,6 +149,7 @@ export async function POST(req: NextRequest) {
       try {
         const accessToken = await refreshEtsyToken();
         const shopId = await getShopId(accessToken);
+        console.log(`[create-etsy-draft] posting to shop_id=${shopId}`);
 
         // Etsy v3 createListing body
         // https://developers.etsy.com/documentation/reference/#operation/createListing
