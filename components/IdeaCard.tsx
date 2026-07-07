@@ -141,6 +141,11 @@ function trendColor(t: "Rising" | "Stable" | "Seasonal") {
   return { Rising: "bg-emerald-100 text-emerald-700", Stable: "bg-gray-100 text-gray-600", Seasonal: "bg-orange-100 text-orange-700" }[t];
 }
 
+/** True when this idea/productType looks like a spreadsheet-tracker product (Expense, Marketing, Income, Budget, etc.) */
+function isTrackerIdea(title: string, productType?: string): boolean {
+  return productType === "Tracker" || title.toLowerCase().includes("tracker");
+}
+
 function LockGate({ onUpgrade, label }: { onUpgrade: () => void; label: string }) {
   return (
     <div data-testid="lock-gate" className="rounded-xl border border-dashed border-purple-200 bg-gradient-to-br from-purple-50 to-orange-50 p-4">
@@ -542,6 +547,11 @@ export default function IdeaCard({ idea, index, isPremium, platform, nicheData, 
   const [showShortsModal, setShowShortsModal] = useState(false);
   const shortsFetchedRef = useRef(false);
 
+  // Create Google Sheet (tracker products)
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null);
+  const [loadingSheet, setLoadingSheet] = useState(false);
+  const [sheetMessage, setSheetMessage] = useState("");
+
   const [showModal, setShowModal] = useState(false);
   const [showPlatformModal, setShowPlatformModal] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -697,6 +707,34 @@ export default function IdeaCard({ idea, index, isPremium, platform, nicheData, 
     } catch { shortsFetchedRef.current = false; }
     finally { setLoadingShorts(false); }
   }, [idea.title, niche, isPremium, onUpgradeClick, shortsPack]);
+
+  const handleCreateSheet = useCallback(async () => {
+    trackEvent("create_sheet_clicked", { idea: idea.title });
+    if (loadingSheet) return;
+    if (sheetUrl) { window.open(sheetUrl, "_blank", "noopener,noreferrer"); return; }
+    setLoadingSheet(true);
+    setSheetMessage("");
+    try {
+      const res = await fetch("/api/create-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, niche, productType }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Failed to create sheet");
+      if (data.googleSheetUrl) {
+        setSheetUrl(data.googleSheetUrl);
+        trackEvent("sheet_created", { idea: idea.title });
+        window.open(data.googleSheetUrl, "_blank", "noopener,noreferrer");
+      } else {
+        setSheetMessage(data.message || "Spreadsheet built, but Google Drive isn't connected yet.");
+      }
+    } catch (e: unknown) {
+      setSheetMessage(e instanceof Error ? e.message : "Something went wrong building the spreadsheet.");
+    } finally {
+      setLoadingSheet(false);
+    }
+  }, [idea.title, niche, productType, loadingSheet, sheetUrl]);
 
   const copyText = async (text: string, key: string) => { await navigator.clipboard.writeText(text); setCopiedListing(key); setTimeout(() => setCopiedListing(null), 2000); };
 
@@ -870,7 +908,26 @@ export default function IdeaCard({ idea, index, isPremium, platform, nicheData, 
             <button data-testid="examples-button" onClick={handleExamples} disabled={loadingExamples} className={`col-span-2 text-xs py-2 px-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 ${showExamples && examples ? "bg-gray-700 text-white" : "bg-gray-50 text-gray-600 hover:bg-gray-100"} disabled:cursor-not-allowed`}>
               {loadingExamples ? <Spinner size={12} /> : "👀"} Real Etsy Examples
             </button>
+
+            {/* Create Google Sheet — tracker-type products only */}
+            {isTrackerIdea(idea.title, productType) && (
+              <button
+                data-testid="create-sheet-button"
+                onClick={handleCreateSheet}
+                disabled={loadingSheet}
+                className="col-span-2 text-xs py-2 px-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-1.5 bg-green-50 text-green-700 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loadingSheet ? <><Spinner size={12} className="text-green-600" /> Building spreadsheet…</> : sheetUrl ? "📊 Sheet Ready — Open Again" : "📊 Create Google Sheet"}
+              </button>
+            )}
           </div>
+
+          {/* Create Google Sheet — status message (mock / error) */}
+          {sheetMessage && (
+            <p data-testid="sheet-message" className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 leading-relaxed">
+              {sheetMessage}
+            </p>
+          )}
 
           {/* Generate Listing Results */}
           {showListing && (

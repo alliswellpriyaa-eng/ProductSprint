@@ -1,0 +1,367 @@
+diff --git a/app/api/generate-template/route.ts b/app/api/generate-template/route.ts
+new file mode 100644
+index 0000000..1dede8a
+--- /dev/null
++++ b/app/api/generate-template/route.ts
+@@ -0,0 +1,114 @@
++import { NextRequest, NextResponse } from "next/server";
++import { parseGeminiError } from "@/lib/geminiError";
++import { extractJson } from "@/lib/safeJson";
++import { geminiCall } from "@/lib/geminiCall";
++import { withUsageCheck } from "@/lib/apiAuth";
++import { getServerCache, setServerCache, serverCacheKey } from "@/lib/serverCache";
++import { buildSpreadsheetBuffer, type SpreadsheetSpec } from "@/lib/buildSpreadsheet";
++import { getFallbackSpreadsheet } from "@/lib/fallback-spreadsheets";
++
++export const maxDuration = 60;
++
++const TTL_24H = 24 * 60 * 60 * 1000;
++const MODELS = ["gemini-2.5-flash"] as const; // structured multi-sheet spec needs the stronger model
++
++function buildSpecPrompt(idea: string): string {
++  return `You are an expert spreadsheet product designer for Etsy digital-download sellers. Design the ACTUAL spreadsheet product (not marketing copy) for this idea:
++
++Product: "${idea}"
++
++CRITICAL: Return ONLY valid JSON, no markdown fences, directly parseable by JSON.parse().
++
++Return exactly this structure:
++{
++  "productName": "Clean product name",
++  "sheets": [
++    {
++      "name": "Tab name, max 31 characters",
++      "title": "Banner title shown in row 1, e.g. 'PRODUCT NAME | Tab Purpose'",
++      "subtitle": "Optional one-line instruction shown under the title, or omit",
++      "columns": [
++        { "header": "Column Header", "key": "camelCaseKey", "width": 18, "format": "$#,##0.00 or 0.0% or mm/dd/yyyy or omit" }
++      ],
++      "rows": [
++        { "camelCaseKey": "sample value or a formula string starting with =, e.g. =SUM(D3:D4)" }
++      ],
++      "totalsRow": { "camelCaseKey": "=SUM(D3:D4) or a label like TOTAL" },
++      "freezeHeader": true
++    }
++  ]
++}
++
++RULES:
++- 4 to 8 sheets. Always include a "Dashboard" sheet LAST that references other sheets with real cross-sheet formulas, e.g. "='Income Log'!D5".
++- Every data-entry sheet needs a totalsRow with a real SUM formula referencing the correct column letter and row range.
++- Formulas MUST use correct Excel A1 cell references consistent with the row/column layout you generate (title row = 1, subtitle row = 2 if present, header row next, then data rows in order, totals row last).
++- Include 2-3 realistic sample rows per data sheet — never leave rows empty.
++- Column "format" should be a valid Excel number format string when the column holds currency, percentages, or dates; omit for plain text.
++- Keep this genuinely useful and sellable — the kind of structure a real freelancer/small-business buyer would pay $15-30 for on Etsy.`;
++}
++
++export async function POST(req: NextRequest) {
++  return withUsageCheck(req, "generate_template", async (_userId) => {
++    const { idea } = await req.json();
++    if (!idea) return NextResponse.json({ error: "idea is required" }, { status: 400 });
++
++    const key = serverCacheKey("template_spec", idea);
++    let spec = getServerCache<SpreadsheetSpec>(key);
++    let modelUsed = "cache";
++    let fellBack = false;
++
++    if (!spec) {
++      if (!process.env.GEMINI_API_KEY) {
++        spec = getFallbackSpreadsheet(idea);
++        fellBack = true;
++      } else {
++        try {
++          const call = await geminiCall(
++            process.env.GEMINI_API_KEY,
++            buildSpecPrompt(idea),
++            { responseMimeType: "application/json", maxOutputTokens: 8192, temperature: 0.5 },
++            { models: MODELS, timeoutMs: 40_000 }
++          );
++          spec = extractJson<SpreadsheetSpec>(call.rawText);
++          modelUsed = call.modelUsed;
++          if (!spec?.sheets?.length) throw new Error("Empty spec returned");
++          setServerCache(key, spec, TTL_24H);
++        } catch (error: unknown) {
++          const { message, code } = parseGeminiError(error);
++          console.error(`[generate-template][${code}]`, error instanceof Error ? error.message : message);
++          spec = getFallbackSpreadsheet(idea);
++          fellBack = true;
++        }
++      }
++    }
++
++    // ── Build the actual .xlsx file from the spec ────────────────────────────
++    try {
++      const buffer = await buildSpreadsheetBuffer(spec);
++      const base64 = buffer.toString("base64");
++
++      console.log({
++        route: "generate-template",
++        model: modelUsed,
++        fallback: fellBack,
++        sheetCount: spec.sheets.length,
++      });
++
++      return NextResponse.json({
++        productName: spec.productName,
++        spec,
++        fileBase64: base64,
++        fileName: `${spec.productName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50)}.xlsx`,
++        fallback: fellBack,
++        modelUsed,
++      });
++    } catch (buildError: unknown) {
++      console.error("[generate-template] xlsx build failed:", buildError);
++      return NextResponse.json(
++        { error: "SPREADSHEET_BUILD_FAILED", message: "Could not build the spreadsheet file from the generated spec." },
++        { status: 500 }
++      );
++    }
++  });
++}
+diff --git a/lib/buildSpreadsheet.ts b/lib/buildSpreadsheet.ts
+new file mode 100644
+index 0000000..00d7105
+--- /dev/null
++++ b/lib/buildSpreadsheet.ts
+@@ -0,0 +1,160 @@
++/**
++ * buildSpreadsheet — turns a structured JSON spec into a real, downloadable
++ * .xlsx workbook (multi-tab, formatted, with live formulas) using exceljs.
++ *
++ * This is the piece ProductSprint was missing: every other generate-* route
++ * produces marketing copy ABOUT a product. This produces the product itself
++ * for spreadsheet-type digital goods (trackers, planners with calculations,
++ * budget sheets, etc.) — the same category as the manually-built
++ * Freelance Income Tracker.
++ */
++import ExcelJS from "exceljs";
++
++// ─── Spec types (this is what Gemini is prompted to return) ──────────────────
++
++export interface ColumnSpec {
++  header: string;
++  key: string;
++  width?: number;
++  /** Excel number format, e.g. "$#,##0.00", "0.0%", "mm/dd/yyyy" */
++  format?: string;
++}
++
++export interface SheetSpec {
++  name: string; // tab name, max 31 chars (Excel hard limit)
++  /** Optional big title banner drawn across row 1 above the header row */
++  title?: string;
++  /** Optional subtitle/instructions banner in row 2 */
++  subtitle?: string;
++  columns: ColumnSpec[];
++  /** Sample/seed rows. Values may be plain data OR formula strings prefixed with "=" */
++  rows: Record<string, string | number>[];
++  /** Optional totals row appended after all data rows. Keys map to column keys. */
++  totalsRow?: Record<string, string | number>;
++  /** Freeze the header row(s) so they stay visible on scroll */
++  freezeHeader?: boolean;
++}
++
++export interface SpreadsheetSpec {
++  productName: string;
++  sheets: SheetSpec[];
++}
++
++// ─── Brand styling (matches the navy/gold palette used across the shop) ──────
++
++const BRAND = {
++  headerFill: "1B2A4A", // navy
++  bannerFill: "1B2A4A",
++  accentFill: "C9A227", // gold
++  totalsFill: "E8D48A", // gold-light
++  headerFont: "FFFFFF",
++  bodyFont: "22262E",
++};
++
++function excelSafeSheetName(name: string, used: Set<string>): string {
++  let safe = name.replace(/[\\/*?:[\]]/g, "").slice(0, 31) || "Sheet";
++  let candidate = safe;
++  let i = 2;
++  while (used.has(candidate.toLowerCase())) {
++    candidate = `${safe.slice(0, 28)} ${i}`;
++    i++;
++  }
++  used.add(candidate.toLowerCase());
++  return candidate;
++}
++
++export async function buildSpreadsheetBuffer(spec: SpreadsheetSpec): Promise<Buffer> {
++  const wb = new ExcelJS.Workbook();
++  wb.creator = "ProductSprint";
++  wb.created = new Date();
++
++  const usedNames = new Set<string>();
++
++  for (const sheetSpec of spec.sheets) {
++    const ws = wb.addWorksheet(excelSafeSheetName(sheetSpec.name, usedNames), {
++      views: sheetSpec.freezeHeader !== false ? [{ state: "frozen", ySplit: sheetSpec.title ? 3 : 1 }] : [],
++    });
++
++    let currentRow = 1;
++
++    // ── Title banner ──────────────────────────────────────────────────────
++    if (sheetSpec.title) {
++      const lastCol = sheetSpec.columns.length;
++      ws.mergeCells(currentRow, 1, currentRow, Math.max(lastCol, 2));
++      const titleCell = ws.getCell(currentRow, 1);
++      titleCell.value = sheetSpec.title;
++      titleCell.font = { bold: true, size: 14, color: { argb: `FF${BRAND.headerFont}` } };
++      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${BRAND.bannerFill}` } };
++      titleCell.alignment = { vertical: "middle", horizontal: "left" };
++      ws.getRow(currentRow).height = 26;
++      currentRow++;
++
++      if (sheetSpec.subtitle) {
++        ws.mergeCells(currentRow, 1, currentRow, Math.max(lastCol, 2));
++        const subCell = ws.getCell(currentRow, 1);
++        subCell.value = sheetSpec.subtitle;
++        subCell.font = { italic: true, size: 9.5, color: { argb: "FF5A5F68" } };
++        subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFAF2D8" } };
++        subCell.alignment = { vertical: "middle", horizontal: "left" };
++        currentRow++;
++      }
++    }
++
++    // ── Header row ─────────────────────────────────────────────────────────
++    const headerRowIdx = currentRow;
++    sheetSpec.columns.forEach((col, i) => {
++      const cell = ws.getCell(headerRowIdx, i + 1);
++      cell.value = col.header;
++      cell.font = { bold: true, color: { argb: `FF${BRAND.headerFont}` } };
++      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${BRAND.headerFill}` } };
++      cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
++      ws.getColumn(i + 1).width = col.width ?? 18;
++    });
++    currentRow++;
++
++    // ── Data rows ───────────────────────────────────────────────────────────
++    for (const row of sheetSpec.rows) {
++      sheetSpec.columns.forEach((col, i) => {
++        const raw = row[col.key];
++        const cell = ws.getCell(currentRow, i + 1);
++        if (typeof raw === "string" && raw.startsWith("=")) {
++          cell.value = { formula: raw.slice(1) };
++        } else {
++          cell.value = raw ?? "";
++        }
++        if (col.format) cell.numFmt = col.format;
++      });
++      currentRow++;
++    }
++
++    // ── Totals row ──────────────────────────────────────────────────────────
++    if (sheetSpec.totalsRow) {
++      sheetSpec.columns.forEach((col, i) => {
++        const raw = sheetSpec.totalsRow![col.key];
++        const cell = ws.getCell(currentRow, i + 1);
++        if (typeof raw === "string" && raw.startsWith("=")) {
++          cell.value = { formula: raw.slice(1) };
++        } else if (raw !== undefined) {
++          cell.value = raw;
++        }
++        cell.font = { bold: true };
++        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${BRAND.totalsFill}` } };
++        if (col.format) cell.numFmt = col.format;
++      });
++    }
++
++    // Thin borders on the table region for a finished look
++    const firstDataRow = headerRowIdx;
++    const lastRow = currentRow;
++    for (let r = firstDataRow; r <= lastRow; r++) {
++      for (let c = 1; c <= sheetSpec.columns.length; c++) {
++        ws.getCell(r, c).border = {
++          bottom: { style: "thin", color: { argb: "FFE4E0D4" } },
++        };
++      }
++    }
++  }
++
++  const arrayBuffer = await wb.xlsx.writeBuffer();
++  return Buffer.from(arrayBuffer);
++}
+diff --git a/lib/fallback-spreadsheets.ts b/lib/fallback-spreadsheets.ts
+new file mode 100644
+index 0000000..c494fb5
+--- /dev/null
++++ b/lib/fallback-spreadsheets.ts
+@@ -0,0 +1,75 @@
++import type { SpreadsheetSpec } from "@/lib/buildSpreadsheet";
++
++/**
++ * getFallbackSpreadsheet — never show a blank state. Mirrors the pattern
++ * used in lib/fallback-planners.ts. Ships one solid, real example
++ * (a bookkeeping/income tracker) since that's the proven-selling category;
++ * extend this map as more niches are validated.
++ */
++export function getFallbackSpreadsheet(productName: string): SpreadsheetSpec {
++  return {
++    productName,
++    sheets: [
++      {
++        name: "Setup",
++        title: `${productName} | Setup & Instructions`,
++        columns: [
++          { header: "Step", key: "step", width: 14 },
++          { header: "Instructions", key: "instructions", width: 70 },
++        ],
++        rows: [
++          { step: "STEP 1", instructions: "Open the Dashboard tab. It will be empty until you enter data — that's normal!" },
++          { step: "STEP 2", instructions: "Go to 'Income Log'. Delete sample rows and enter your real entries." },
++          { step: "STEP 3", instructions: "Go to 'Expenses'. Replace sample data with your actual expenses." },
++          { step: "STEP 4", instructions: "Dashboard and Monthly Summary update automatically." },
++        ],
++      },
++      {
++        name: "Income Log",
++        title: `${productName} | Income Log`,
++        columns: [
++          { header: "Date", key: "date", width: 14, format: "mm/dd/yyyy" },
++          { header: "Source", key: "source", width: 22 },
++          { header: "Description", key: "description", width: 28 },
++          { header: "Amount", key: "amount", width: 14, format: "$#,##0.00" },
++          { header: "Notes", key: "notes", width: 30 },
++        ],
++        rows: [
++          { date: "2026-01-15", source: "Client A", description: "Project deposit", amount: 500, notes: "50% upfront" },
++          { date: "2026-02-01", source: "Client B", description: "Monthly retainer", amount: 1200, notes: "" },
++        ],
++        totalsRow: { source: "TOTAL", amount: "=SUM(D3:D4)" },
++      },
++      {
++        name: "Expenses",
++        title: `${productName} | Expenses Log`,
++        columns: [
++          { header: "Date", key: "date", width: 14, format: "mm/dd/yyyy" },
++          { header: "Vendor", key: "vendor", width: 22 },
++          { header: "Category", key: "category", width: 22 },
++          { header: "Amount", key: "amount", width: 14, format: "$#,##0.00" },
++          { header: "Tax Deductible", key: "deductible", width: 16 },
++        ],
++        rows: [
++          { date: "2026-01-10", vendor: "Adobe", category: "Software", amount: 54.99, deductible: "Y" },
++          { date: "2026-02-01", vendor: "WeWork", category: "Office/Co-working", amount: 450, deductible: "Y" },
++        ],
++        totalsRow: { vendor: "TOTAL", amount: "=SUM(D3:D4)" },
++      },
++      {
++        name: "Dashboard",
++        title: `${productName} | Dashboard`,
++        subtitle: "Auto-updating summary — edit your logs and this updates automatically",
++        columns: [
++          { header: "Metric", key: "metric", width: 26 },
++          { header: "Value", key: "value", width: 20, format: "$#,##0.00" },
++        ],
++        rows: [
++          { metric: "Total Income", value: "='Income Log'!D5" },
++          { metric: "Total Expenses", value: "='Expenses'!D5" },
++          { metric: "Net Profit", value: "=B3-B4" },
++        ],
++      },
++    ],
++  };
++}
