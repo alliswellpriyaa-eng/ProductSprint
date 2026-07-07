@@ -31,6 +31,7 @@ export type TrackerType =
   | "Income Tracker"
   | "Marketing Tracker"
   | "Budget Tracker"
+  | "Goal Tracker"
   | "Tracker";
 
 interface ColumnDef {
@@ -48,6 +49,8 @@ interface TrackerConfig {
   categoryKey: string; // entry column key that the Categories dropdown applies to
   amountKey: string; // entry column key used for SUM / SUMIF dashboard formulas
   secondaryAmountKey?: string; // e.g. "Actual Amount" for Budget Tracker variance formulas
+  statusKey?: string; // entry column key that gets an inline dropdown (e.g. "status")
+  statusOptions?: string[]; // options for the inline status dropdown
 }
 
 export interface BuildTrackerOptions {
@@ -142,6 +145,28 @@ const TRACKER_CONFIGS: Record<TrackerType, TrackerConfig> = {
     amountKey: "budgeted",
     secondaryAmountKey: "actual",
   },
+  "Goal Tracker": {
+    type: "Goal Tracker",
+    subtitle: "Set targets, log progress, and see what's on track at a glance.",
+    entryColumns: [
+      { header: "Goal", key: "goal", width: 28 },
+      { header: "Category", key: "category", width: 18 },
+      { header: "Target Value", key: "targetValue", width: 14, numFmt: "#,##0.00" },
+      { header: "Current Value", key: "currentValue", width: 14, numFmt: "#,##0.00" },
+      { header: "Progress %", key: "progress", width: 12, numFmt: "0%" },
+      { header: "Target Date", key: "targetDate", width: 14, numFmt: "yyyy-mm-dd" },
+      { header: "Status", key: "status", width: 16 },
+      { header: "Notes", key: "notes", width: 26 },
+    ],
+    categories: [
+      "Financial", "Health & Fitness", "Career", "Personal Growth",
+      "Business", "Relationships", "Other",
+    ],
+    categoryKey: "category",
+    amountKey: "currentValue",
+    statusKey: "status",
+    statusOptions: ["Not Started", "In Progress", "Complete"],
+  },
   "Tracker": {
     type: "Tracker",
     subtitle: "A flexible tracker template — customize the categories to fit your goal.",
@@ -156,7 +181,43 @@ const TRACKER_CONFIGS: Record<TrackerType, TrackerConfig> = {
     categories: ["General", "Priority", "Completed", "In Progress", "Other"],
     categoryKey: "category",
     amountKey: "amount",
+    statusKey: "status",
+    statusOptions: ["Not Started", "In Progress", "Complete"],
   },
+};
+
+// ─── Sample seed data ──────────────────────────────────────────────────────────
+// Real example rows so a buyer opening the sheet sees a filled-in product,
+// not an empty grid with $0 dashboard totals.
+const SAMPLE_DATA: Record<TrackerType, Record<string, string | number>[]> = {
+  "Expense Tracker": [
+    { date: "2026-01-05", description: "Grocery run", category: "Food & Groceries", amount: 84.32, paymentMethod: "Credit Card", notes: "Weekly shop" },
+    { date: "2026-01-08", description: "Netflix subscription", category: "Subscriptions", amount: 15.99, paymentMethod: "Credit Card", notes: "Monthly" },
+    { date: "2026-01-12", description: "Gas fill-up", category: "Transportation", amount: 42.1, paymentMethod: "Debit Card", notes: "" },
+  ],
+  "Income Tracker": [
+    { date: "2026-01-03", source: "Acme Corp", category: "Salary", amount: 3200, paymentMethod: "Direct Deposit", notes: "Biweekly paycheck" },
+    { date: "2026-01-10", source: "Etsy Shop", category: "Side Hustle", amount: 220.5, paymentMethod: "PayPal", notes: "5 orders" },
+    { date: "2026-01-15", source: "Client project", category: "Freelance", amount: 600, paymentMethod: "Bank Transfer", notes: "Logo design" },
+  ],
+  "Marketing Tracker": [
+    { date: "2026-01-04", campaign: "New Year Sale", category: "Paid Ads", amount: 50, impressions: 12500, clicks: 340, conversions: 18, notes: "Facebook ads" },
+    { date: "2026-01-11", campaign: "Spring Launch Teaser", category: "Social Media", amount: 0, impressions: 4200, clicks: 190, conversions: 6, notes: "Organic Instagram" },
+  ],
+  "Budget Tracker": [
+    { month: "January", category: "Housing", budgeted: 1200, actual: 1200, notes: "Rent" },
+    { month: "January", category: "Food", budgeted: 400, actual: 365.2, notes: "Under budget" },
+    { month: "January", category: "Entertainment", budgeted: 100, actual: 142.5, notes: "Over — concert tickets" },
+  ],
+  "Goal Tracker": [
+    { goal: "Save for emergency fund", category: "Financial", targetValue: 5000, currentValue: 1800, targetDate: "2026-12-31", status: "In Progress", notes: "" },
+    { goal: "Run a 5K", category: "Health & Fitness", targetValue: 5, currentValue: 2, targetDate: "2026-09-01", status: "In Progress", notes: "Training 3x/week" },
+    { goal: "Launch Etsy shop", category: "Business", targetValue: 1, currentValue: 1, targetDate: "2026-03-01", status: "Complete", notes: "Done!" },
+  ],
+  "Tracker": [
+    { date: "2026-01-05", item: "Sample item one", category: "General", amount: 10, status: "In Progress", notes: "Replace with your own data" },
+    { date: "2026-01-08", item: "Sample item two", category: "Priority", amount: 25, status: "Not Started", notes: "" },
+  ],
 };
 
 // ─── Detection ────────────────────────────────────────────────────────────────
@@ -177,6 +238,7 @@ export function detectTrackerType(input: string): TrackerType {
   if (s.includes("income")) return "Income Tracker";
   if (s.includes("marketing")) return "Marketing Tracker";
   if (s.includes("budget")) return "Budget Tracker";
+  if (s.includes("goal")) return "Goal Tracker";
   return "Tracker";
 }
 
@@ -272,6 +334,46 @@ function addEntriesSheet(workbook: ExcelJS.Workbook, config: TrackerConfig) {
     }
   }
 
+  // Goal Tracker: Progress % = Current / Target, formula down every row
+  if (config.type === "Goal Tracker") {
+    const targetLetter = letterForKey(config, "targetValue");
+    const currentLetter = letterForKey(config, "currentValue");
+    const progressLetter = letterForKey(config, "progress");
+    for (let r = 2; r <= FORMULA_ROWS; r++) {
+      sheet.getCell(`${progressLetter}${r}`).value = {
+        formula: `IF(OR(${targetLetter}${r}="",${targetLetter}${r}=0),"",${currentLetter}${r}/${targetLetter}${r})`,
+      };
+      sheet.getCell(`${progressLetter}${r}`).numFmt = "0%";
+    }
+  }
+
+  // Inline status dropdown (e.g. Not Started / In Progress / Complete) — no separate
+  // sheet needed since the option list is fixed rather than user-editable like Categories.
+  if (config.statusKey && config.statusOptions) {
+    const statusLetter = letterForKey(config, config.statusKey);
+    for (let r = 2; r <= FORMULA_ROWS; r++) {
+      sheet.getCell(`${statusLetter}${r}`).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [`"${config.statusOptions.join(",")}"`],
+        showErrorMessage: true,
+        errorTitle: "Invalid status",
+        error: "Please choose a status from the dropdown list.",
+      };
+    }
+  }
+
+  // Real seed rows — a buyer opening this sheet sees a filled-in example, and the
+  // Dashboard KPIs/breakdown show real numbers instead of $0 on the first open.
+  const sampleRows = SAMPLE_DATA[config.type] ?? [];
+  sampleRows.forEach((rowData, i) => {
+    const r = sheet.getRow(i + 2);
+    config.entryColumns.forEach((col) => {
+      const val = rowData[col.key];
+      if (val !== undefined) r.getCell(col.key).value = val;
+    });
+  });
+
   sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: config.entryColumns.length } };
 }
 
@@ -355,6 +457,14 @@ function addDashboardSheet(workbook: ExcelJS.Workbook, config: TrackerConfig, pr
       { label: "Total Impressions", formula: `SUM(Entries!${impressionsLetter}2:${impressionsLetter}${FORMULA_ROWS})`, fmt: "#,##0" },
       { label: "Total Clicks", formula: `SUM(Entries!${clicksLetter}2:${clicksLetter}${FORMULA_ROWS})`, fmt: "#,##0" },
       { label: "Total Conversions", formula: `SUM(Entries!${conversionsLetter}2:${conversionsLetter}${FORMULA_ROWS})`, fmt: "#,##0" }
+    );
+  } else if (config.type === "Goal Tracker") {
+    const statusLetter = letterForKey(config, "status");
+    const progressLetter = letterForKey(config, "progress");
+    kpis.push(
+      { label: "Total Goals", formula: `COUNTA(Entries!${firstColLetter}2:${firstColLetter}${FORMULA_ROWS})`, fmt: "#,##0" },
+      { label: "Goals Completed", formula: `COUNTIF(Entries!${statusLetter}2:${statusLetter}${FORMULA_ROWS},"Complete")`, fmt: "#,##0" },
+      { label: "Average Progress", formula: `IFERROR(AVERAGE(Entries!${progressLetter}2:${progressLetter}${FORMULA_ROWS}),0)`, fmt: "0%" }
     );
   } else {
     kpis.push(
