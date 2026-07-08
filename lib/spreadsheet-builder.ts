@@ -556,7 +556,18 @@ function addSettingsSheet(workbook: ExcelJS.Workbook, config: TrackerConfig, opt
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function buildTrackerWorkbook(options: BuildTrackerOptions): Promise<BuiltTracker> {
-  const type = normaliseTrackerType(options.trackerType) ?? detectTrackerType(options.trackerType || options.productTitle);
+  // Bug fix: the caller passes trackerType = a generic classifier field from the
+  // ideation step (e.g. productType: "Tracker"), which exactly matches a config key
+  // and was short-circuiting normaliseTrackerType() before the product's own title
+  // (e.g. "Etsy Shop Goal Tracker Printable") ever got keyword-checked. Every idea
+  // was landing on the same generic Tracker config regardless of its actual title.
+  // Fix: try keyword detection on the title FIRST; only fall back to the passed
+  // trackerType field when the title itself doesn't hint at a specific flavor.
+  const titleType = detectTrackerType(options.productTitle);
+  const type: TrackerType =
+    titleType !== "Tracker"
+      ? titleType
+      : normaliseTrackerType(options.trackerType) ?? detectTrackerType(options.trackerType || options.productTitle);
   const config = TRACKER_CONFIGS[type];
 
   const workbook = new ExcelJS.Workbook();
